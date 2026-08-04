@@ -1,4 +1,4 @@
-// Forte — Carolina's program seed (v1.0)
+// Forte — Carolina's program seed (v1.1)
 // This is only the FIRST-RUN seed. After first launch the program lives in
 // localStorage and is edited in-app; changes here won't overwrite it.
 //
@@ -13,7 +13,7 @@
 // Voo is lighter practice.
 
 const SEED_PROGRAM = {
-  specVersion: '1.0',
+  specVersion: '1.1',
   days: [
     {
       id: 'terra',
@@ -103,7 +103,13 @@ const SEED_PROGRAM = {
         {
           id: 'v5', name: 'Push-up practice', target: '2–3 easy sets',
           track: false, rest: 'normal',
-          cue: 'Second exposure — one notch easier than Terra, crisp reps, stop two short of grinding',
+          menu: [
+            'Incline push-up — hands on a bar or box; lower the height over time',
+            'Eccentric-only from the floor — 3–5 s down, reset on knees',
+            'Kneeling push-up — extra volume after inclines',
+            'Full push-up singles — when the low incline feels easy',
+          ],
+          cue: 'Slightly easier version than Terra — crisp reps, stop two short of grinding. Same ladder: 3×8 crisp at one height → move down a notch',
         },
         {
           id: 'v6', name: 'Hollow body', target: '3×20–30 s',

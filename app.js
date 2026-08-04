@@ -8,7 +8,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 
 let state = null;
 
@@ -58,8 +58,25 @@ function patchProgram() {
   const p = state.program;
   if (!p) return;
   const v = parseFloat(p.specVersion) || 0;
-  if (v >= 1.0) return;
-  p.specVersion = '1.0';
+  if (v >= 1.1) return;
+
+  // 1.1: Voo's push-up practice carries the full progression ladder —
+  // same menu as Terra, cue marks it as the slightly easier exposure.
+  if (v < 1.1) {
+    const voo = p.days.find((d) => d.id === 'voo');
+    const pu = voo && voo.slots.find((s) => slug(s.name) === 'push-up-practice');
+    if (pu) {
+      pu.menu = [
+        'Incline push-up — hands on a bar or box; lower the height over time',
+        'Eccentric-only from the floor — 3–5 s down, reset on knees',
+        'Kneeling push-up — extra volume after inclines',
+        'Full push-up singles — when the low incline feels easy',
+      ];
+      pu.cue = 'Slightly easier version than Terra — crisp reps, stop two short of grinding. Same ladder: 3×8 crisp at one height → move down a notch';
+    }
+  }
+
+  p.specVersion = '1.1';
   save();
 }
 
