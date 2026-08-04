@@ -1,0 +1,911 @@
+/* Forte — Carolina's gym companion. One surface, one-press rest (silent).
+   Same engine as Strength Rebuild v2: no per-set logging — tracked slots
+   capture one working weight (prefilled from last session), menu slots
+   take a note. Rest never auto-starts. */
+
+'use strict';
+
+/* ============================== state ============================== */
+
+const STORE_KEY = 'forte-state-v1';
+const APP_VERSION = '1.0.0';
+
+let state = null;
+
+function slug(name) {
+  return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function defaultState() {
+  return {
+    version: 1,
+    settings: {
+      unit: 'lb', theme: 'auto', restNormal: 90, restHeavy: 180, lastExport: null,
+    },
+    program: JSON.parse(JSON.stringify(SEED_PROGRAM)),
+    sessions: [],
+    active: null,
+  };
+}
+
+function validState(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  if (obj.version !== 1) return false;
+  const s = obj.settings;
+  if (!s || typeof s !== 'object') return false;
+  if (s.unit == null || s.theme == null || !(s.restNormal > 0) || !(s.restHeavy > 0)) return false;
+  if (!obj.program || !Array.isArray(obj.program.days)) return false;
+  if (!Array.isArray(obj.sessions)) return false;
+  return true;
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (validState(parsed)) { state = parsed; return; }
+    }
+  } catch (e) { /* corrupted → fall through */ }
+  state = defaultState();
+  save();
+}
+
+// One-time program updates for installed devices — the seed only reaches
+// fresh installs; the live program sits in localStorage. Staged by
+// specVersion so each patch runs once and in-app edits afterward stick.
+function patchProgram() {
+  const p = state.program;
+  if (!p) return;
+  const v = parseFloat(p.specVersion) || 0;
+  if (v >= 1.0) return;
+  p.specVersion = '1.0';
+  save();
+}
+
+let saveTimer = null;
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  catch (e) { toast('Could not save — storage full?'); }
+}
+function saveSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 400);
+}
+function flushSave() { clearTimeout(saveTimer); save(); }
+window.addEventListener('pagehide', flushSave);
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); });
+
+/* ============================== helpers ============================== */
+
+const $ = (sel) => document.querySelector(sel);
+
+function esc(str) {
+  return String(str).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+function fmtDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function fmtMMSS(sec) {
+  sec = Math.max(0, Math.round(sec));
+  return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+function findDay(dayId) { return state.program.days.find((d) => d.id === dayId); }
+function findSlot(day, slotId) { return day ? day.slots.find((s) => s.id === slotId) : null; }
+
+function applyTheme() {
+  const t = state.settings.theme;
+  if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  else document.documentElement.removeAttribute('data-theme');
+}
+
+let toastTimer = null;
+function toast(msg) {
+  let el = $('#toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+/* ========================= history & prefill ========================= */
+
+// Most recent recorded weight for an exercise, matched by name-slug so it
+// survives program edits.
+function lastWeightFor(exerciseId) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const entry = (state.sessions[i].entries || []).find(
+      (e) => e.exerciseId === exerciseId && e.weight !== '' && e.weight != null
+    );
+    if (entry) return entry.weight;
+  }
+  return '';
+}
+
+// Working reps mirror the working weight: one number per exercise per
+// session ("what did your work sets hit"), never per-set entry.
+function lastRepsFor(exerciseId) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const entry = (state.sessions[i].entries || []).find(
+      (e) => e.exerciseId === exerciseId && e.reps > 0
+    );
+    if (entry) return entry.reps;
+  }
+  return '';
+}
+
+function lastSessionFor(dayId) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    if (state.sessions[i].dayId === dayId) return state.sessions[i];
+  }
+  return null;
+}
+
+/* ============================ session core ============================ */
+
+// A session begins lazily: the first weight tweak or note creates it. Finishing
+// records every tracked slot at its effective (prefilled or adjusted) weight.
+// An unfinished session left on the other day is banked, never discarded.
+function ensureActive(dayId) {
+  if (state.active && state.active.dayId === dayId) return state.active;
+  if (state.active) {
+    recordSession(state.active.dayId, '(auto-saved — session left open)');
+    toast('Previous session auto-saved');
+  }
+  state.active = { dayId, startedAt: Date.now(), lastActivityAt: Date.now(), entries: {} };
+  return state.active;
+}
+
+function activeEntry(dayId, slotId) {
+  const a = ensureActive(dayId);
+  if (!a.entries[slotId]) a.entries[slotId] = { weight: null, note: '' };
+  a.lastActivityAt = Date.now();
+  return a.entries[slotId];
+}
+
+// Effective weight shown on a slot chip: session adjustment wins, else prefill.
+function effectiveWeight(dayId, slot) {
+  const a = state.active;
+  const e = a && a.dayId === dayId ? a.entries[slot.id] : null;
+  if (e && e.weight != null && e.weight !== '') return e.weight;
+  if (e && e.weight === '') return '';
+  return lastWeightFor(slug(slot.name));
+}
+
+// Build and push the session record for a day's active entries, then clear
+// the active session. Navigation, rest, save, and toasts stay with callers.
+function recordSession(dayId, note) {
+  const day = findDay(dayId);
+  if (!day) { state.active = null; return; }
+  const a = state.active && state.active.dayId === dayId ? state.active : null;
+  const entries = [];
+  for (const slot of day.slots) {
+    const e = a ? a.entries[slot.id] : null;
+    const slotNote = e && e.note ? e.note.trim() : '';
+    if (slot.track) {
+      const w = effectiveWeight(dayId, slot);
+      const entry = { exerciseId: slug(slot.name), name: slot.name, weight: w === '' ? '' : parseFloat(w), note: slotNote };
+      if (slot.reps) {
+        const r = effectiveReps(dayId, slot);
+        entry.reps = r === '' ? '' : parseInt(r, 10);
+      }
+      entries.push(entry);
+    } else if (slotNote) {
+      entries.push({ exerciseId: slug(slot.name), name: slot.name, weight: '', note: slotNote });
+    }
+  }
+  state.sessions.push({
+    id: uid(), v: 1,
+    dayId: day.id, dayName: `${day.name} — ${day.subtitle}`,
+    startedAt: a ? a.startedAt : Date.now(),
+    endedAt: Date.now(),
+    note: (note || '').trim(),
+    entries,
+  });
+  state.active = null;
+}
+
+function effectiveReps(dayId, slot) {
+  const a = state.active;
+  const e = a && a.dayId === dayId ? a.entries[slot.id] : null;
+  if (e && e.reps != null && e.reps !== '') return e.reps;
+  if (e && e.reps === '') return '';
+  return lastRepsFor(slug(slot.name));
+}
+
+function finishSession(dayId, note) {
+  if (!findDay(dayId)) return;
+  recordSession(dayId, note);
+  restCancel();
+  save();
+  location.hash = '#/';
+  toast('Session saved');
+}
+
+// A session left hanging past 12h is finished, not lost: adjusted weights and
+// notes are real data, and "forgot to hit finish" is the common failure.
+const STALE_AFTER_MS = 12 * 3600 * 1000;
+function autoFinishStale() {
+  const a = state.active;
+  if (!a) return;
+  const last = a.lastActivityAt || a.startedAt;
+  if (Date.now() - last > STALE_AFTER_MS) {
+    recordSession(a.dayId, '(auto-saved — session left open)');
+    save();
+    render();
+    toast('Previous session auto-saved');
+  }
+}
+
+// An installed PWA resumes for days without a fresh boot — run the stale
+// check whenever the app comes back, not just at launch.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) autoFinishStale(); });
+window.addEventListener('pageshow', (e) => { if (e.persisted) autoFinishStale(); });
+
+/* ====================== rest engine (silent) ======================
+   No audio: media playback would take the iOS audio session and cut off
+   whatever she's listening to for the whole rest. End of rest =
+   vibration where supported + the dock's visual done state. */
+
+const rest = { running: false, endsAt: 0, total: 0, tier: null, done: false };
+let restTick = null;
+
+function buzz() {
+  try { if (navigator.vibrate) navigator.vibrate([220, 120, 220, 120, 320]); } catch (e) {}
+}
+
+/* ---- screen wake lock (nice-to-have) ---- */
+let wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if (!('wakeLock' in navigator)) return;
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch (e) { wakeLock = null; }
+}
+function releaseWakeLock() {
+  try { if (wakeLock) { wakeLock.release(); wakeLock = null; } } catch (e) {}
+}
+
+/* ---- rest control ---- */
+
+function restStart(tier) {
+  const sec = tier === 'heavy' ? state.settings.restHeavy : state.settings.restNormal;
+  rest.running = true;
+  rest.done = false;
+  rest.tier = tier;
+  rest.total = sec;
+  rest.endsAt = Date.now() + sec * 1000;
+  requestWakeLock();
+  startRestTick();
+  renderRestDock();
+}
+
+function restCancel() {
+  rest.running = false;
+  rest.done = false;
+  releaseWakeLock();
+  stopRestTick();
+  renderRestDock();
+}
+
+function restFinish() {
+  rest.running = false;
+  rest.done = true;
+  buzz();
+  releaseWakeLock();
+  stopRestTick();
+  renderRestDock();
+  setTimeout(() => { if (rest.done && !rest.running) { rest.done = false; renderRestDock(); } }, 4000);
+}
+
+function startRestTick() {
+  stopRestTick();
+  restTick = setInterval(() => {
+    if (!rest.running) return;
+    const left = (rest.endsAt - Date.now()) / 1000;
+    if (left <= 0) { restFinish(); return; }
+    updateRestTime(left);
+  }, 250);
+}
+function stopRestTick() { clearInterval(restTick); restTick = null; }
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && rest.running && Date.now() >= rest.endsAt) restFinish();
+});
+
+/* ============================== views ============================== */
+
+function topbar(backTo) {
+  const left = backTo
+    ? `<a class="backlink" href="${backTo}">‹ Back</a>`
+    : `<div class="wordmark">Forte</div>`;
+  const right = backTo ? '' : `<a class="gear" href="#/settings" aria-label="Settings">⚙</a>`;
+  return `<div class="topbar">${left}${right}</div>`;
+}
+
+function greetingHTML() {
+  const now = new Date();
+  const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
+  return `
+    <div class="greet">
+      <div class="greet-ola">Olá, Carolina</div>
+      <div class="greet-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}</div>
+    </div>`;
+}
+
+function viewHome() {
+  const cards = state.program.days.map((day) => {
+    const last = lastSessionFor(day.id);
+    const when = last ? `Last: ${fmtDate(last.endedAt)}` : 'Not yet logged';
+    return `
+      <a class="daycard" href="#/day/${day.id}">
+        <div class="daycard-name">${esc(day.name)}</div>
+        <div class="daycard-sub">${esc(day.subtitle)}</div>
+        <div class="daycard-last">${esc(when)}</div>
+      </a>`;
+  }).join('');
+  return `${topbar()}${greetingHTML()}<div class="daygrid">${cards}</div>`;
+}
+
+function slotCardHTML(day, slot) {
+  const a = state.active && state.active.dayId === day.id ? state.active.entries[slot.id] : null;
+  const note = a && a.note ? a.note : '';
+  const menu = slot.menu && slot.menu.length
+    ? `<ul class="menu">${slot.menu.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : '';
+  const warmup = slot.warmup
+    ? `<div class="warmup"><span class="warmup-tag">Warm-up</span> ${esc(slot.warmup)}</div>` : '';
+  let chip = '', chipEdit = '';
+  if (slot.track) {
+    const w = effectiveWeight(day.id, slot);
+    const label = w === '' || w == null ? '—' : (slot.added ? '+' : '') + w;
+    const r = slot.reps ? effectiveReps(day.id, slot) : null;
+    const repsChip = slot.reps
+      ? `<span class="chip-reps">×${r === '' || r == null ? '—' : esc(String(r))}</span>` : '';
+    chip = `
+      <button class="chip" data-action="chip" data-slot="${slot.id}">
+        <span class="chip-num">${esc(String(label))}</span>
+        <span class="chip-unit">${esc(state.settings.unit)}</span>
+        ${repsChip}
+        <span class="chip-caret">▾</span>
+      </button>`;
+    // Full-width row(s) below the footer — inside the flex footer this
+    // forces the whole page past the viewport when revealed.
+    const weightRow = `
+        <button class="step" data-action="step" data-slot="${slot.id}" data-d="-5">−5</button>
+        <input class="chip-input" type="number" inputmode="decimal" step="any"
+               data-action="weight" data-slot="${slot.id}" value="${w === '' || w == null ? '' : esc(String(w))}">
+        <button class="step" data-action="step" data-slot="${slot.id}" data-d="5">+5</button>`;
+    chipEdit = slot.reps
+      ? `
+      <div class="chip-edit stacked hidden" data-edit="${slot.id}">
+        <div class="edit-row"><span class="edit-tag">${esc(state.settings.unit)}</span>${weightRow}</div>
+        <div class="edit-row"><span class="edit-tag">reps</span>
+          <button class="step" data-action="rstep" data-slot="${slot.id}" data-d="-1">−1</button>
+          <input class="chip-input" type="number" inputmode="numeric"
+                 data-action="reps" data-slot="${slot.id}" value="${r === '' || r == null ? '' : esc(String(r))}">
+          <button class="step" data-action="rstep" data-slot="${slot.id}" data-d="1">+1</button>
+        </div>
+      </div>`
+      : `
+      <div class="chip-edit hidden" data-edit="${slot.id}">${weightRow}</div>`;
+  }
+  return `
+    <div class="slot" data-slotcard="${slot.id}">
+      <div class="slot-head">
+        <div class="slot-name">${esc(slot.name)}</div>
+        <div class="slot-target">${esc(slot.target || '')}</div>
+      </div>
+      ${slot.cue ? `<div class="slot-cue">${esc(slot.cue)}</div>` : ''}
+      ${warmup}${menu}
+      <div class="slot-foot">
+        ${chip}
+        <button class="notebtn ${note ? 'has-note' : ''}" data-action="note" data-slot="${slot.id}">✎ note</button>
+      </div>
+      ${chipEdit}
+      <div class="note-edit hidden" data-noteedit="${slot.id}">
+        <textarea rows="2" data-action="notetext" data-slot="${slot.id}"
+          placeholder="What happened?">${esc(note)}</textarea>
+      </div>
+    </div>`;
+}
+
+function restDockHTML() {
+  const n = state.settings.restNormal, h = state.settings.restHeavy;
+  if (rest.running) {
+    const left = (rest.endsAt - Date.now()) / 1000;
+    const pct = Math.max(0, Math.min(100, (1 - left / rest.total) * 100));
+    return `
+      <div class="rest-running">
+        <div class="rest-fill" data-rest-fill style="width:${pct}%"></div>
+        <div class="rest-row">
+          <div class="rest-time" data-rest-time>${fmtMMSS(left)}</div>
+          <span class="rest-label">resting</span>
+          <button class="rest-mini" data-action="rest-restart">↻</button>
+          <button class="rest-mini" data-action="rest-cancel">✕</button>
+        </div>
+      </div>`;
+  }
+  if (rest.done) {
+    return `<button class="rest-done" data-action="rest-ack">Rest done — go</button>`;
+  }
+  return `
+    <div class="rest-idle">
+      <button class="restbtn" data-action="rest" data-tier="normal">Rest <span>${fmtMMSS(n)}</span></button>
+      <button class="restbtn heavy" data-action="rest" data-tier="heavy">Rest <span>${fmtMMSS(h)}</span></button>
+    </div>`;
+}
+
+function renderRestDock() {
+  const dock = $('#restdock');
+  if (dock) dock.innerHTML = restDockHTML();
+}
+function updateRestTime(left) {
+  const t = $('[data-rest-time]');
+  const f = $('[data-rest-fill]');
+  if (t) t.textContent = fmtMMSS(left);
+  if (f) f.style.width = Math.max(0, Math.min(100, (1 - left / rest.total) * 100)) + '%';
+}
+
+function viewDay(dayId) {
+  const day = findDay(dayId);
+  if (!day) { location.hash = '#/'; return ''; }
+  return `
+    ${topbar('#/')}
+    <div class="dayhead">
+      <div class="dayhead-name">${esc(day.name)} <span class="dayhead-sub">${esc(day.subtitle)}</span></div>
+    </div>
+    <div id="restdock" class="restdock">${restDockHTML()}</div>
+    <div class="slots">${day.slots.map((s) => slotCardHTML(day, s)).join('')}</div>
+    <button class="finishbtn" data-action="finish" data-day="${day.id}">Finish session</button>`;
+}
+
+function viewFinish(dayId) {
+  const day = findDay(dayId);
+  if (!day) { location.hash = '#/'; return ''; }
+  return `
+    ${topbar('#/day/' + dayId)}
+    <div class="finish-wrap">
+      <div class="eyebrow">Finish ${esc(day.name)}</div>
+      <p class="finish-hint">Saves every tracked lift at the weight shown on its chip.</p>
+      <textarea id="finishnote" rows="3" placeholder="Session note (optional)"></textarea>
+      <button class="finishbtn solid" data-action="finish-save" data-day="${day.id}">Save session</button>
+    </div>`;
+}
+
+function viewSettings() {
+  const s = state.settings;
+  const seg = (name, val, opts) => opts.map(([v, label]) =>
+    `<button class="seg ${val === v ? 'on' : ''}" data-action="${name}" data-v="${v}">${label}</button>`
+  ).join('');
+  return `
+    ${topbar('#/')}
+    <div class="settings">
+      <div class="setrow">
+        <div class="setlabel">Theme</div>
+        <div class="segwrap">${seg('theme', s.theme, [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']])}</div>
+      </div>
+      <div class="setrow">
+        <div class="setlabel">Unit</div>
+        <div class="segwrap">${seg('unit', s.unit, [['lb', 'lb'], ['kg', 'kg']])}</div>
+      </div>
+      <div class="setrow">
+        <div class="setlabel">Rest — normal</div>
+        <input class="setnum" type="number" inputmode="numeric" data-action="rest-normal" value="${s.restNormal}"> s
+      </div>
+      <div class="setrow">
+        <div class="setlabel">Rest — heavy</div>
+        <input class="setnum" type="number" inputmode="numeric" data-action="rest-heavy" value="${s.restHeavy}"> s
+      </div>
+      <div class="setrow">
+        <div class="setlabel">Program</div>
+        <a class="setbtn" href="#/program">Edit</a>
+      </div>
+      <div class="setrow">
+        <div class="setlabel">Data</div>
+        <div class="btnrow">
+          <button class="setbtn" data-action="export">Export</button>
+          <button class="setbtn" data-action="copy-json">Copy JSON</button>
+          <a class="setbtn" href="#/import">Import</a>
+        </div>
+      </div>
+      <div class="setrow">
+        <div class="setlabel">Danger</div>
+        <button class="setbtn danger" data-action="erase">Erase all data</button>
+      </div>
+      <div class="version">v${APP_VERSION} · ${state.sessions.length} sessions logged</div>
+    </div>`;
+}
+
+function viewImport() {
+  return `
+    ${topbar('#/settings')}
+    <div class="settings">
+      <div class="eyebrow">Import</div>
+      <p class="finish-hint">Paste a Forte JSON export. Replaces everything.</p>
+      <textarea id="importbox" rows="8" placeholder="{ … }"></textarea>
+      <button class="finishbtn solid" data-action="import-load">Load</button>
+    </div>`;
+}
+
+function viewProgram() {
+  const days = state.program.days.map((day) => `
+    <div class="eyebrow">${esc(day.name)} — ${esc(day.subtitle)}</div>
+    <div class="proglist">
+      ${day.slots.map((s) => `
+        <a class="progrow" href="#/program/${day.id}/${s.id}">
+          <span>${esc(s.name)}</span>
+          <span class="progrow-target">${esc(s.target || '')}</span>
+        </a>`).join('')}
+      <button class="setbtn" data-action="add-slot" data-day="${day.id}">+ Add exercise</button>
+    </div>`).join('');
+  return `${topbar('#/settings')}<div class="settings">${days}</div>`;
+}
+
+function viewSlotEdit(dayId, slotId) {
+  const day = findDay(dayId);
+  const slot = findSlot(day, slotId);
+  if (!slot) { location.hash = '#/program'; return ''; }
+  const field = (label, action, value, ph) => `
+    <label class="editfield"><span>${label}</span>
+      <input type="text" data-action="${action}" value="${esc(value || '')}" placeholder="${ph || ''}"></label>`;
+  return `
+    ${topbar('#/program')}
+    <div class="settings" data-editing-day="${dayId}" data-editing-slot="${slotId}">
+      ${field('Name', 'edit-name', slot.name)}
+      ${field('Target', 'edit-target', slot.target, 'e.g. 3×6–8 · RIR 2–3')}
+      ${field('Cue', 'edit-cue', slot.cue)}
+      ${field('Warm-up', 'edit-warmup', slot.warmup)}
+      <label class="editfield"><span>Menu (one per line)</span>
+        <textarea rows="4" data-action="edit-menu">${esc((slot.menu || []).join('\n'))}</textarea></label>
+      <div class="setrow">
+        <div class="setlabel">Track weight</div>
+        <button class="seg ${slot.track ? 'on' : ''}" data-action="edit-track">${slot.track ? 'On' : 'Off'}</button>
+      </div>
+      <div class="setrow">
+        <div class="setlabel">Added load (+)</div>
+        <button class="seg ${slot.added ? 'on' : ''}" data-action="edit-added">${slot.added ? 'On' : 'Off'}</button>
+      </div>
+      <div class="setrow">
+        <div class="setlabel">Track reps</div>
+        <button class="seg ${slot.reps ? 'on' : ''}" data-action="edit-reps">${slot.reps ? 'On' : 'Off'}</button>
+      </div>
+      <div class="setrow">
+        <div class="setlabel">Rest tier</div>
+        <div class="segwrap">
+          <button class="seg ${slot.rest !== 'heavy' ? 'on' : ''}" data-action="edit-rest" data-v="normal">Normal</button>
+          <button class="seg ${slot.rest === 'heavy' ? 'on' : ''}" data-action="edit-rest" data-v="heavy">Heavy</button>
+        </div>
+      </div>
+      <div class="btnrow">
+        <button class="setbtn" data-action="edit-up">↑ Move up</button>
+        <button class="setbtn" data-action="edit-down">↓ Move down</button>
+        <button class="setbtn danger" data-action="edit-delete">Delete</button>
+      </div>
+    </div>`;
+}
+
+/* ============================== router ============================== */
+
+function render() {
+  const hash = location.hash || '#/';
+  const parts = hash.replace(/^#\//, '').split('/');
+  let html = '';
+  if (parts[0] === 'day' && parts[1]) html = viewDay(parts[1]);
+  else if (parts[0] === 'finish' && parts[1]) html = viewFinish(parts[1]);
+  else if (parts[0] === 'settings') html = viewSettings();
+  else if (parts[0] === 'import') html = viewImport();
+  else if (parts[0] === 'program' && parts[1] && parts[2]) html = viewSlotEdit(parts[1], parts[2]);
+  else if (parts[0] === 'program') html = viewProgram();
+  else html = viewHome();
+  $('#app').innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+window.addEventListener('hashchange', render);
+
+/* ============================== actions ============================== */
+
+let pendingErase = false;
+
+function currentDayId() {
+  const m = (location.hash || '').match(/^#\/day\/([^/]+)/);
+  return m ? m[1] : null;
+}
+
+function editedSlot() {
+  const wrap = $('[data-editing-slot]');
+  if (!wrap) return {};
+  const dayId = wrap.getAttribute('data-editing-day');
+  const slotId = wrap.getAttribute('data-editing-slot');
+  const day = findDay(dayId);
+  return { day, slot: findSlot(day, slotId) };
+}
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target.closest('[data-action]');
+  if (!t) return;
+  const action = t.getAttribute('data-action');
+  const dayId = currentDayId();
+
+  if (action === 'rest') { restStart(t.getAttribute('data-tier')); return; }
+  if (action === 'rest-restart') { restStart(rest.tier || 'normal'); return; }
+  if (action === 'rest-cancel') { restCancel(); return; }
+  if (action === 'rest-ack') { rest.done = false; renderRestDock(); return; }
+
+  if (action === 'chip') {
+    const box = $(`[data-edit="${t.getAttribute('data-slot')}"]`);
+    if (box) {
+      box.classList.toggle('hidden');
+      t.classList.toggle('open', !box.classList.contains('hidden'));
+    }
+    return;
+  }
+  if (action === 'step') {
+    const slotId = t.getAttribute('data-slot');
+    const d = parseFloat(t.getAttribute('data-d'));
+    const day = findDay(dayId);
+    const slot = findSlot(day, slotId);
+    if (!slot) return;
+    const cur = parseFloat(effectiveWeight(dayId, slot));
+    const next = (Number.isFinite(cur) ? cur : 0) + d;
+    const e = activeEntry(dayId, slotId);
+    e.weight = Math.max(0, next);
+    save();
+    const input = $(`[data-edit="${slotId}"] .chip-input`);
+    if (input) input.value = e.weight;
+    const chipNum = $(`[data-slotcard="${slotId}"] .chip-num`);
+    if (chipNum) chipNum.textContent = (slot.added ? '+' : '') + e.weight;
+    return;
+  }
+  if (action === 'rstep') {
+    const slotId = t.getAttribute('data-slot');
+    const d = parseInt(t.getAttribute('data-d'), 10);
+    const day = findDay(dayId);
+    const slot = findSlot(day, slotId);
+    if (!slot) return;
+    const cur = parseInt(effectiveReps(dayId, slot), 10);
+    const next = (Number.isFinite(cur) ? cur : 0) + d;
+    const e = activeEntry(dayId, slotId);
+    e.reps = Math.max(0, next);
+    save();
+    const input = $(`[data-edit="${slotId}"] input[data-action="reps"]`);
+    if (input) input.value = e.reps;
+    const chipReps = $(`[data-slotcard="${slotId}"] .chip-reps`);
+    if (chipReps) chipReps.textContent = '×' + e.reps;
+    return;
+  }
+  if (action === 'note') {
+    const box = $(`[data-noteedit="${t.getAttribute('data-slot')}"]`);
+    if (box) {
+      box.classList.toggle('hidden');
+      if (!box.classList.contains('hidden')) box.querySelector('textarea').focus();
+    }
+    return;
+  }
+
+  if (action === 'finish') { location.hash = '#/finish/' + t.getAttribute('data-day'); return; }
+  if (action === 'finish-save') {
+    finishSession(t.getAttribute('data-day'), ($('#finishnote') || {}).value || '');
+    return;
+  }
+
+  if (action === 'theme') { state.settings.theme = t.getAttribute('data-v'); applyTheme(); save(); render(); return; }
+  if (action === 'unit') { state.settings.unit = t.getAttribute('data-v'); save(); render(); return; }
+  if (action === 'export') { exportJSON(); return; }
+  if (action === 'copy-json') {
+    navigator.clipboard.writeText(JSON.stringify(state, null, 1))
+      .then(() => toast('Copied'))
+      .catch(() => toast('Copy failed'));
+    return;
+  }
+  if (action === 'erase') {
+    if (!pendingErase) {
+      pendingErase = true;
+      t.textContent = 'Tap again to erase';
+      setTimeout(() => { pendingErase = false; if (document.body.contains(t)) t.textContent = 'Erase all data'; }, 3500);
+      return;
+    }
+    localStorage.removeItem(STORE_KEY);
+    state = defaultState();
+    save();
+    pendingErase = false;
+    location.hash = '#/';
+    render();
+    toast('Erased');
+    return;
+  }
+  if (action === 'import-load') {
+    try {
+      const parsed = JSON.parse(($('#importbox') || {}).value || '');
+      if (validState(parsed)) { state = parsed; }
+      else { toast('Not a Forte export'); return; }
+      patchProgram();
+      save();
+      applyTheme();
+      location.hash = '#/';
+      toast('Imported');
+    } catch (e) { toast('Could not parse JSON'); }
+    return;
+  }
+
+  if (action === 'add-slot') {
+    const day = findDay(t.getAttribute('data-day'));
+    if (!day) return;
+    const id = 's' + uid();
+    day.slots.push({ id, name: 'New exercise', target: '', track: true, rest: 'normal', cue: '' });
+    save();
+    location.hash = `#/program/${day.id}/${id}`;
+    return;
+  }
+  if (action === 'edit-track' || action === 'edit-added' || action === 'edit-reps') {
+    const { slot } = editedSlot();
+    if (!slot) return;
+    const key = action === 'edit-track' ? 'track' : action === 'edit-added' ? 'added' : 'reps';
+    slot[key] = !slot[key];
+    save(); render();
+    return;
+  }
+  if (action === 'edit-rest') {
+    const { slot } = editedSlot();
+    if (!slot) return;
+    slot.rest = t.getAttribute('data-v');
+    save(); render();
+    return;
+  }
+  if (action === 'edit-up' || action === 'edit-down') {
+    const { day, slot } = editedSlot();
+    if (!day || !slot) return;
+    const i = day.slots.indexOf(slot);
+    const j = action === 'edit-up' ? i - 1 : i + 1;
+    if (j < 0 || j >= day.slots.length) return;
+    day.slots.splice(i, 1);
+    day.slots.splice(j, 0, slot);
+    save();
+    toast(action === 'edit-up' ? 'Moved up' : 'Moved down');
+    return;
+  }
+  if (action === 'edit-delete') {
+    const { day, slot } = editedSlot();
+    if (!day || !slot) return;
+    day.slots.splice(day.slots.indexOf(slot), 1);
+    save();
+    location.hash = '#/program';
+    return;
+  }
+});
+
+document.addEventListener('input', (ev) => {
+  const t = ev.target.closest('[data-action]');
+  if (!t) return;
+  const action = t.getAttribute('data-action');
+  const dayId = currentDayId();
+
+  if (action === 'weight') {
+    const slotId = t.getAttribute('data-slot');
+    const e = activeEntry(dayId, slotId);
+    e.weight = t.value === '' ? '' : parseFloat(t.value);
+    if (!Number.isFinite(e.weight)) e.weight = '';
+    const day = findDay(dayId);
+    const slot = findSlot(day, slotId);
+    const chipNum = $(`[data-slotcard="${slotId}"] .chip-num`);
+    if (chipNum && slot) chipNum.textContent = e.weight === '' ? '—' : (slot.added ? '+' : '') + e.weight;
+    saveSoon();
+    return;
+  }
+  if (action === 'reps') {
+    const slotId = t.getAttribute('data-slot');
+    const e = activeEntry(dayId, slotId);
+    e.reps = t.value === '' ? '' : parseInt(t.value, 10);
+    if (!Number.isFinite(e.reps)) e.reps = '';
+    const chipReps = $(`[data-slotcard="${slotId}"] .chip-reps`);
+    if (chipReps) chipReps.textContent = '×' + (e.reps === '' ? '—' : e.reps);
+    saveSoon();
+    return;
+  }
+  if (action === 'notetext') {
+    const e = activeEntry(dayId, t.getAttribute('data-slot'));
+    e.note = t.value;
+    const btn = $(`[data-slotcard="${t.getAttribute('data-slot')}"] .notebtn`);
+    if (btn) btn.classList.toggle('has-note', !!t.value.trim());
+    saveSoon();
+    return;
+  }
+  if (action === 'rest-normal' || action === 'rest-heavy') {
+    const n = parseInt(t.value, 10);
+    if (Number.isFinite(n) && n >= 10 && n <= 900) {
+      state.settings[action === 'rest-normal' ? 'restNormal' : 'restHeavy'] = n;
+      saveSoon();
+    }
+    return;
+  }
+
+  const editable = { 'edit-name': 'name', 'edit-target': 'target', 'edit-cue': 'cue', 'edit-warmup': 'warmup' };
+  if (editable[action]) {
+    const { slot } = editedSlot();
+    if (!slot) return;
+    slot[editable[action]] = t.value;
+    saveSoon();
+    return;
+  }
+  if (action === 'edit-menu') {
+    const { slot } = editedSlot();
+    if (!slot) return;
+    const lines = t.value.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (lines.length) slot.menu = lines; else delete slot.menu;
+    saveSoon();
+    return;
+  }
+});
+
+/* ============================== export ============================== */
+
+function exportJSON() {
+  const json = JSON.stringify(state, null, 1);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const name = `forte-${stamp}.json`;
+  const blob = new Blob([json], { type: 'application/json' });
+  const file = new File([blob], name, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: name }).then(() => {
+      state.settings.lastExport = Date.now();
+      save();
+    }).catch(() => {});
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  state.settings.lastExport = Date.now();
+  save();
+}
+
+/* ============================ update flow ============================
+   Installed iOS PWAs cling to old versions: they resume without a fresh
+   boot (no update check) and a single failed request used to sink the
+   whole SW install. Check for an update on every resume, and when a new
+   version takes control, reload into it — unless a rest is running. */
+
+let reloadOnControl = false;
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!reloadOnControl) return;
+    reloadOnControl = false;
+    if (rest.running) { toast('Update ready — lands on next open'); return; }
+    location.reload();
+  });
+}
+function checkForUpdate() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.getRegistration()
+    .then((reg) => { if (reg) { reloadOnControl = true; reg.update(); } })
+    .catch(() => {});
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
+window.addEventListener('load', () => setTimeout(checkForUpdate, 3000));
+
+/* ============================== boot ============================== */
+
+load();
+patchProgram();
+applyTheme();
+autoFinishStale();
+render();
