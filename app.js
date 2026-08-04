@@ -8,7 +8,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 let state = null;
 
@@ -355,11 +355,34 @@ function topbar(backTo) {
   return `<div class="topbar">${left}${right}</div>`;
 }
 
+// Pressed sprig — the one ornament. Absolutely positioned into the empty
+// corner, negative z-index so cards always paint over it.
+function sprigHTML() {
+  return `
+    <svg class="sprig" viewBox="0 0 104 118" aria-hidden="true">
+      <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M96 6 C 78 18 54 38 40 62 C 32 76 27 89 26 102"/>
+        <path d="M60 44 C 54 54 50 62 48 72" stroke-width="1.7"/>
+        <path d="M74 26 c 10 -9 22 -10 30 -4 c -10 9 -22 10 -30 4 z" fill="currentColor" stroke="none" opacity="0.3"/>
+        <path d="M38 66 c -11 -3 -18 -11 -19 -21 c 11 3 18 11 19 21 z" fill="currentColor" stroke="none" opacity="0.3"/>
+        <g transform="translate(38 70) scale(0.8)" stroke-width="1.7">
+          <ellipse cx="12" cy="6.2" rx="3.4" ry="4.8"/>
+          <ellipse cx="12" cy="6.2" rx="3.4" ry="4.8" transform="rotate(72 12 12)"/>
+          <ellipse cx="12" cy="6.2" rx="3.4" ry="4.8" transform="rotate(144 12 12)"/>
+          <ellipse cx="12" cy="6.2" rx="3.4" ry="4.8" transform="rotate(216 12 12)"/>
+          <ellipse cx="12" cy="6.2" rx="3.4" ry="4.8" transform="rotate(288 12 12)"/>
+        </g>
+        <circle cx="26" cy="106" r="2.6" fill="currentColor" stroke="none" opacity="0.55"/>
+      </g>
+    </svg>`;
+}
+
 function greetingHTML() {
   const now = new Date();
   const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
   return `
     <div class="greet">
+      ${sprigHTML()}
       <div class="greet-ola">Olá, Carolina</div>
       <div class="greet-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}</div>
     </div>`;
@@ -484,6 +507,7 @@ function viewDay(dayId) {
   return `
     ${topbar('#/')}
     <div class="dayhead">
+      ${sprigHTML()}
       <div class="dayhead-name">${esc(day.name)} <span class="dayhead-sub">${esc(day.subtitle)}</span></div>
     </div>
     <div id="restdock" class="restdock">${restDockHTML()}</div>

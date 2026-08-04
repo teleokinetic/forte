@@ -110,6 +110,20 @@ a { color: inherit; text-decoration: none; }
   margin: 18px 0 8px;
 }
 
+/* ---------- pressed sprig ---------- */
+
+/* The one ornament: a hand-drawn rose sprig in the empty corner beside
+   the greeting / day title. Negative z-index tucks it behind the cards
+   and the rest dock, so it can never touch content. */
+.sprig {
+  position: absolute; pointer-events: none;
+  color: var(--rose); opacity: 0.5; z-index: -1;
+}
+.greet { position: relative; }
+.greet .sprig { top: -8px; right: -2px; width: 104px; height: 118px; }
+.dayhead { position: relative; }
+.dayhead .sprig { top: -46px; right: 0; width: 88px; height: 100px; }
+
 /* ---------- home ---------- */
 
 .greet { margin: 4px 0 18px; }
