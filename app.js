@@ -8,7 +8,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 
 let state = null;
 
@@ -391,7 +391,7 @@ function greetingHTML() {
 function viewHome() {
   const cards = state.program.days.map((day) => {
     const last = lastSessionFor(day.id);
-    const when = last ? `Last: ${fmtDate(last.endedAt)}` : 'Not yet logged';
+    const when = last ? `Last: ${fmtDate(last.endedAt)}` : "First one's waiting";
     return `
       <a class="daycard" href="#/day/${day.id}">
         <div class="daycard-name">${esc(day.name)}</div>
@@ -412,12 +412,16 @@ function slotCardHTML(day, slot) {
   let chip = '', chipEdit = '';
   if (slot.track) {
     const w = effectiveWeight(day.id, slot);
-    const label = w === '' || w == null ? '—' : (slot.added ? '+' : '') + w;
+    // Empty chip invites instead of showing "— lb ×—" dashes; the numeric
+    // spans stay in the DOM so live updates work before the next render.
+    const empty = w === '' || w == null;
+    const label = empty ? '—' : (slot.added ? '+' : '') + w;
     const r = slot.reps ? effectiveReps(day.id, slot) : null;
     const repsChip = slot.reps
       ? `<span class="chip-reps">×${r === '' || r == null ? '—' : esc(String(r))}</span>` : '';
     chip = `
-      <button class="chip" data-action="chip" data-slot="${slot.id}">
+      <button class="chip ${empty ? 'empty' : ''}" data-action="chip" data-slot="${slot.id}">
+        <span class="chip-add">add weight</span>
         <span class="chip-num">${esc(String(label))}</span>
         <span class="chip-unit">${esc(state.settings.unit)}</span>
         ${repsChip}
@@ -459,7 +463,7 @@ function slotCardHTML(day, slot) {
       ${chipEdit}
       <div class="note-edit hidden" data-noteedit="${slot.id}">
         <textarea rows="2" data-action="notetext" data-slot="${slot.id}"
-          placeholder="What happened?">${esc(note)}</textarea>
+          placeholder="How did it go?">${esc(note)}</textarea>
       </div>
     </div>`;
 }
@@ -710,7 +714,10 @@ document.addEventListener('click', (ev) => {
     const input = $(`[data-edit="${slotId}"] .chip-input`);
     if (input) input.value = e.weight;
     const chipNum = $(`[data-slotcard="${slotId}"] .chip-num`);
-    if (chipNum) chipNum.textContent = (slot.added ? '+' : '') + e.weight;
+    if (chipNum) {
+      chipNum.textContent = (slot.added ? '+' : '') + e.weight;
+      chipNum.closest('.chip').classList.remove('empty');
+    }
     return;
   }
   if (action === 'rstep') {
@@ -844,7 +851,10 @@ document.addEventListener('input', (ev) => {
     const day = findDay(dayId);
     const slot = findSlot(day, slotId);
     const chipNum = $(`[data-slotcard="${slotId}"] .chip-num`);
-    if (chipNum && slot) chipNum.textContent = e.weight === '' ? '—' : (slot.added ? '+' : '') + e.weight;
+    if (chipNum && slot) {
+      chipNum.textContent = e.weight === '' ? '—' : (slot.added ? '+' : '') + e.weight;
+      if (e.weight !== '') chipNum.closest('.chip').classList.remove('empty');
+    }
     saveSoon();
     return;
   }

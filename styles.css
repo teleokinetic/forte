@@ -102,6 +102,8 @@ a { color: inherit; text-decoration: none; }
 .backlink {
   font-family: var(--display); font-weight: 700; font-size: 15px;
   color: var(--dim);
+  /* Real thumb target; negative margin keeps the visual position. */
+  padding: 12px 14px; margin: -12px -14px;
 }
 
 .eyebrow {
@@ -259,6 +261,14 @@ body::before {
   font-family: var(--display); font-weight: 700; font-size: 21px;
   font-variant-numeric: tabular-nums;
 }
+/* Until a weight exists the chip invites instead of showing dashes.
+   The numeric spans stay in the DOM (hidden) so live updates still land. */
+.chip-add {
+  display: none; font-family: var(--display); font-weight: 700;
+  font-size: 15px; color: var(--dim); padding: 4px 0;
+}
+.chip.empty .chip-add { display: inline; }
+.chip.empty .chip-num, .chip.empty .chip-unit, .chip.empty .chip-reps { display: none; }
 .chip-unit { color: var(--dim); font-size: 13px; }
 .chip-reps {
   font-family: var(--display); font-weight: 700; font-size: 16px;
