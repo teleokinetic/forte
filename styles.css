@@ -105,6 +105,7 @@ a { color: inherit; text-decoration: none; }
   /* Real thumb target; negative margin keeps the visual position. */
   padding: 12px 14px; margin: -12px -14px;
 }
+.pagetitle { font-family: var(--display); font-weight: 700; font-size: 17px; color: var(--rose); }
 
 .eyebrow {
   font-family: var(--display); font-weight: 700; font-size: 15px;
@@ -137,8 +138,12 @@ a { color: inherit; text-decoration: none; }
 
 .daygrid { display: grid; gap: 12px; }
 .daycard {
-  display: block; background: var(--card); border: 1px solid var(--line);
+  display: block; position: relative; background: var(--card); border: 1px solid var(--line);
   border-radius: var(--petal); padding: 18px 18px;
+}
+.dayglyph {
+  position: absolute; top: 16px; right: 16px; width: 44px; height: 44px;
+  color: var(--rose); opacity: 0.4; pointer-events: none;
 }
 .daycard-name {
   font-family: var(--display); font-weight: 700; font-size: 29px;
@@ -150,13 +155,43 @@ a { color: inherit; text-decoration: none; }
   font-size: 13px; color: var(--rose); font-variant-numeric: tabular-nums;
 }
 
+/* The one new navigation: the Progresso badge row under the day cards.
+   (.progrow is taken — it's the Program editor's list row.) */
+.progresso {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 18px; padding: 13px 16px; margin-top: 12px;
+}
+.progresso-mark {
+  width: 34px; height: 34px; border-radius: 50%; flex: none;
+  background: var(--rose); color: var(--on-rose);
+  display: grid; place-items: center;
+}
+.progresso-mark svg { width: 18px; height: 18px; }
+.progresso-t { font-family: var(--display); font-weight: 700; font-size: 17px; }
+.progresso-s { color: var(--dim); font-size: 13.5px; margin-top: 1px; }
+.progresso-chev { margin-left: auto; color: var(--dim); font-size: 18px; }
+
 /* ---------- day header ---------- */
 
-.dayhead { margin-bottom: 10px; }
+.dayhead { margin-bottom: 4px; }
 .dayhead-name {
   font-family: var(--display); font-weight: 700; font-size: 26px;
 }
 .dayhead-sub { color: var(--dim); font-size: 17px; font-weight: 500; font-family: var(--body); }
+
+/* Petal trail — one pip per exercise, fills as rings are tapped. */
+.trail { display: flex; align-items: center; gap: 7px; margin: 0 2px 10px; }
+.pip {
+  width: 11px; height: 11px; flex: none;
+  border-radius: 50% 50% 50% 22%; transform: rotate(-8deg);
+  border: 1.8px solid var(--dim); opacity: 0.5;
+}
+.pip.on { background: var(--rose); border-color: var(--rose); opacity: 1; }
+.trail-count {
+  font-family: var(--display); font-weight: 700; font-size: 13px;
+  color: var(--dim); margin-left: 4px;
+}
 
 /* ---------- rest dock ---------- */
 
@@ -186,6 +221,10 @@ body::before {
 }
 .restbtn span { font-variant-numeric: tabular-nums; opacity: 0.8; margin-left: 4px; }
 .restbtn.heavy { background: var(--raised); color: var(--ink); border: 1px solid var(--line); }
+.restbtn .rest-for {
+  display: block; font-family: var(--body); font-weight: 600;
+  font-size: 11px; opacity: 0.85; margin: 1px 0 0;
+}
 
 /* Running rest is a pill that fills as she rests — the button is the clock. */
 .rest-running {
@@ -226,17 +265,39 @@ body::before {
   background: var(--card); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 14px 16px;
 }
-.slot-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.slot-head { display: flex; align-items: baseline; gap: 10px; }
 .slot-name {
   font-family: var(--display); font-weight: 700; font-size: 19px;
   line-height: 1.15;
 }
 .slot-target {
   font-family: var(--display); font-weight: 700; font-size: 13.5px;
-  color: var(--dim); white-space: nowrap;
+  color: var(--dim); white-space: nowrap; margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
 .slot-cue { color: var(--dim); font-size: 14px; margin-top: 3px; }
+
+/* Done ring — 40px thumb target drawing a 24px circle. */
+.ring {
+  width: 40px; height: 40px; flex: none; position: relative;
+  align-self: center; margin: -8px 0 -8px -8px; padding: 0;
+}
+.ring::before {
+  content: ''; position: absolute; inset: 8px;
+  border-radius: 50%; border: 2px solid var(--line);
+}
+.slot.done .ring::before { background: var(--rose); border-color: var(--rose); }
+.slot.done .ring::after {
+  content: '✓'; position: absolute; inset: 8px;
+  display: grid; place-items: center;
+  color: var(--on-rose); font-size: 13px; font-weight: 700;
+}
+
+/* A done card settles back to one line — the list shortens as she works. */
+.slot.done .slot-name, .slot.done .slot-target { opacity: 0.45; }
+.slot.done .slot-cue, .slot.done .warmup, .slot.done .rungs,
+.slot.done .rung-detail, .slot.done .slot-foot,
+.slot.done .chip-edit, .slot.done .note-edit { display: none; }
 
 .warmup {
   margin-top: 8px; padding: 7px 11px; border-radius: 12px;
@@ -248,8 +309,15 @@ body::before {
   margin-right: 6px;
 }
 
-.menu { margin: 8px 0 0; padding-left: 18px; font-size: 14px; }
-.menu li { margin: 1px 0; }
+/* Rung pills — the menu as a tappable ladder; the pick feeds Progresso. */
+.rungs { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+.rung {
+  font-size: 13.5px; font-weight: 600; color: var(--dim);
+  background: var(--bg); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 13px;
+}
+.rung.on { background: var(--rose); color: var(--on-rose); border-color: var(--rose); }
+.rung-detail { color: var(--dim); font-size: 13.5px; margin-top: 7px; }
 
 .slot-foot { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .chip {
@@ -325,6 +393,80 @@ body::before {
 .finishbtn.solid { background: var(--rose); color: var(--on-rose); border: none; }
 .finish-wrap { display: grid; gap: 12px; }
 .finish-hint { color: var(--dim); font-size: 14px; }
+
+/* The bloom — the sprig's flower opens once per session, here. */
+.bloomwrap { text-align: center; margin: 4px 0 0; }
+.bloom { width: 88px; height: 88px; color: var(--rose); }
+.bloom .petal { animation: openpetal 0.9s ease-out backwards; }
+.bloom .petal:nth-child(2) { animation-delay: 0.15s; }
+.bloom .petal:nth-child(3) { animation-delay: 0.3s; }
+.bloom .petal:nth-child(4) { animation-delay: 0.45s; }
+.bloom .petal:nth-child(5) { animation-delay: 0.6s; }
+@keyframes openpetal { from { opacity: 0; } }
+.boa { font-family: var(--display); font-weight: 700; font-size: 28px; text-align: center; }
+.fsub {
+  text-align: center; color: var(--dim); margin-top: -8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.recap {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--petal); padding: 6px 16px;
+}
+.rrow {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 10px; padding: 9px 0; border-top: 1px solid var(--line);
+}
+.rrow:first-child { border-top: 0; }
+.rname { font-weight: 600; font-size: 15px; }
+.rnum {
+  font-family: var(--display); font-weight: 700; font-size: 15px;
+  color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.rnum b { color: var(--ink); }
+.rmenu { color: var(--dim); font-size: 13.5px; padding: 9px 0 10px; border-top: 1px solid var(--line); }
+
+/* ---------- progresso ---------- */
+
+.ladder {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--petal); padding: 16px 16px 12px; margin-bottom: 14px;
+}
+.lrow { display: flex; gap: 13px; }
+.lrail { width: 16px; flex: none; display: flex; flex-direction: column; align-items: center; }
+.ldot { width: 12px; height: 12px; border-radius: 50%; background: var(--rose); flex: none; margin-top: 4px; }
+.ldot.now { width: 16px; height: 16px; box-shadow: 0 0 0 4px var(--rose-wash); }
+.ldot.next { background: var(--card); border: 2px solid var(--dim); }
+.lline { width: 2px; flex: 1; background: var(--line); }
+.lbody { padding-bottom: 15px; min-width: 0; }
+.lwhen { font-family: var(--display); font-weight: 700; font-size: 12px; color: var(--rose); }
+.lrow.future .lwhen { color: var(--dim); }
+.lname { font-family: var(--display); font-weight: 700; font-size: 17px; margin: 1px 0; }
+.lrow.future .lname { color: var(--dim); font-weight: 600; }
+.ldesc { color: var(--dim); font-size: 13px; }
+.goalmark { width: 22px; height: 22px; color: var(--rose); vertical-align: -5px; margin-left: 4px; }
+.lcap { color: var(--dim); font-size: 13px; border-top: 1px solid var(--line); padding-top: 9px; margin-top: 2px; }
+
+.trend {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 20px; padding: 13px 16px; margin-bottom: 11px;
+}
+.tinfo { min-width: 0; }
+.tname { font-family: var(--display); font-weight: 700; font-size: 17px; }
+.tline { color: var(--dim); font-size: 13.5px; margin-top: 1px; }
+.tline b { color: var(--rose); font-weight: 700; }
+.spark { margin-left: auto; flex: none; color: var(--rose); }
+
+.rhythm-card { display: block; }
+.rhythm { display: flex; gap: 18px; align-items: flex-end; padding: 4px 2px 0; }
+.week { text-align: center; }
+.wdots { display: flex; gap: 5px; justify-content: center; }
+.wdot { width: 10px; height: 10px; border-radius: 50%; background: var(--rose); }
+.wdot.zero { background: transparent; border: 1.6px solid var(--dim); opacity: 0.45; }
+.wdot.faded { opacity: 0.25; }
+.wl { font-size: 11px; color: var(--dim); margin-top: 5px; }
+.rhythm-line { margin-top: 10px; }
 
 /* ---------- settings & editor ---------- */
 
