@@ -276,6 +276,7 @@ body::before {
   font-variant-numeric: tabular-nums;
 }
 .slot-cue { color: var(--dim); font-size: 14px; margin-top: 3px; }
+.pair-note { color: var(--rose); font-size: 12.5px; font-weight: 600; margin-top: 3px; }
 
 /* Done ring — 40px thumb target drawing a 24px circle. */
 .ring {
@@ -296,7 +297,7 @@ body::before {
 /* A done card settles back to one line — the list shortens as she works. */
 .slot.done .slot-name, .slot.done .slot-target { opacity: 0.45; }
 .slot.done .slot-cue, .slot.done .warmup, .slot.done .rungs,
-.slot.done .rung-detail, .slot.done .slot-foot,
+.slot.done .rung-detail, .slot.done .slot-foot, .slot.done .pair-note,
 .slot.done .chip-edit, .slot.done .note-edit { display: none; }
 
 .warmup {

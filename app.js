@@ -8,7 +8,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 let state = null;
 
@@ -58,7 +58,7 @@ function patchProgram() {
   const p = state.program;
   if (!p) return;
   const v = parseFloat(p.specVersion) || 0;
-  if (v >= 1.1) return;
+  if (v >= 1.2) return;
 
   // 1.1: Voo's push-up practice carries the full progression ladder —
   // same menu as Terra, cue marks it as the slightly easier exposure.
@@ -76,7 +76,26 @@ function patchProgram() {
     }
   }
 
-  p.specVersion = '1.1';
+  // 1.2: Terra's rests tell the truth. Push-up + row are a strength
+  // pairing and carry + Pallof + hang cycle as a trio — 1:30 between
+  // moves is right, so those slots get pair keys and the UI says why.
+  // The hip thrust stands alone at RIR 1–2, so it takes the heavy tier.
+  if (v < 1.2) {
+    const terra = p.days.find((d) => d.id === 'terra');
+    if (terra) {
+      const bySlug = {};
+      terra.slots.forEach((s) => { bySlug[slug(s.name)] = s; });
+      const set = (key, fields) => { if (bySlug[key]) Object.assign(bySlug[key], fields); };
+      set('push-up-progression', { pair: 'a', short: 'push-ups' });
+      set('one-arm-db-row', { pair: 'a', short: 'the row' });
+      set('hip-thrust-smith', { rest: 'heavy' });
+      set('suitcase-carry', { pair: 'b', short: 'carry' });
+      set('pallof-press', { pair: 'b', short: 'Pallof' });
+      set('hang-grip', { pair: 'b', short: 'hang' });
+    }
+  }
+
+  p.specVersion = '1.2';
   save();
 }
 
@@ -574,6 +593,10 @@ function slotCardHTML(day, slot) {
   const note = a && a.note ? a.note : '';
   const done = !!(a && a.done);
   const menu = slot.menu && slot.menu.length ? rungsHTML(slot, a) : '';
+  const partners = pairPartners(day, slot);
+  const pairNote = partners.length
+    ? `<div class="pair-note">Pair with ${esc(pairNames(day, slot))} — ${partners.length > 1 ? 'cycle through' : 'alternate sets'}</div>`
+    : '';
   const warmup = slot.warmup
     ? `<div class="warmup"><span class="warmup-tag">Warm-up</span> ${esc(slot.warmup)}</div>` : '';
   let chip = '', chipEdit = '';
@@ -623,6 +646,7 @@ function slotCardHTML(day, slot) {
         <div class="slot-name">${esc(slot.name)}</div>
         <div class="slot-target">${esc(slot.target || '')}</div>
       </div>
+      ${pairNote}
       ${slot.cue ? `<div class="slot-cue">${esc(slot.cue)}</div>` : ''}
       ${warmup}${menu}
       <div class="slot-foot">
@@ -635,6 +659,21 @@ function slotCardHTML(day, slot) {
           placeholder="How did it go?">${esc(note)}</textarea>
       </div>
     </div>`;
+}
+
+// Slots sharing a pair key are done together, alternating sets — the
+// normal rest between moves is the point, and the UI says who's paired.
+function pairPartners(day, slot) {
+  if (!day || !slot || !slot.pair) return [];
+  return day.slots.filter((s) => s.pair === slot.pair && s.id !== slot.id);
+}
+
+function shortName(slot) {
+  return slot.short || String(slot.name).split(/[(—/]/)[0].trim();
+}
+
+function pairNames(day, slot) {
+  return pairPartners(day, slot).map(shortName).join(' + ');
 }
 
 // First unchecked slot in program order — what she's on right now.
@@ -667,9 +706,10 @@ function restDockHTML(dayId) {
   // The tier the current exercise wants takes the rose and says why.
   const cur = dayId ? currentSlot(dayId) : null;
   const heavyHint = !!(cur && cur.rest === 'heavy');
+  const pairFor = !heavyHint && cur ? pairNames(findDay(dayId), cur) : '';
   return `
     <div class="rest-idle">
-      <button class="restbtn ${heavyHint ? 'heavy' : ''}" data-action="rest" data-tier="normal">Rest <span>${fmtMMSS(n)}</span></button>
+      <button class="restbtn ${heavyHint ? 'heavy' : ''}" data-action="rest" data-tier="normal">Rest <span>${fmtMMSS(n)}</span>${pairFor ? `<span class="rest-for">Pairs with ${esc(pairFor)}</span>` : ''}</button>
       <button class="restbtn ${heavyHint ? '' : 'heavy'}" data-action="rest" data-tier="heavy">Rest <span>${fmtMMSS(h)}</span>${heavyHint ? `<span class="rest-for">${esc(cur.name)} rests long</span>` : ''}</button>
     </div>`;
 }
@@ -981,6 +1021,7 @@ function viewSlotEdit(dayId, slotId) {
       ${field('Warm-up', 'edit-warmup', slot.warmup)}
       <label class="editfield"><span>Menu (one per line)</span>
         <textarea rows="4" data-action="edit-menu">${esc((slot.menu || []).join('\n'))}</textarea></label>
+      ${field('Pair (same letter = done together)', 'edit-pair', slot.pair, 'e.g. a')}
       <div class="setrow">
         <div class="setlabel">Track weight</div>
         <button class="seg ${slot.track ? 'on' : ''}" data-action="edit-track">${slot.track ? 'On' : 'Off'}</button>
@@ -1300,6 +1341,14 @@ document.addEventListener('input', (ev) => {
     if (!slot) return;
     const lines = t.value.split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length) slot.menu = lines; else delete slot.menu;
+    saveSoon();
+    return;
+  }
+  if (action === 'edit-pair') {
+    const { slot } = editedSlot();
+    if (!slot) return;
+    const v = t.value.trim();
+    if (v) slot.pair = v; else delete slot.pair;
     saveSoon();
     return;
   }
