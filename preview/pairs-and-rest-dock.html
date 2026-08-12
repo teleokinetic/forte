@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forte — Duplas &amp; the Rest Dock</title>
+<style>
+/* Forte design-options page — Morning Rosé, committed light look.
+   Phones render the real app tokens; page chrome is a warmer paper. */
+
+*{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  /* app tokens (light Morning Rosé, verbatim from styles.css) */
+  --bg:#FBF4F1; --surface:#F4E7E2; --card:#FFFDFC; --raised:#F0E1DB;
+  --line:#EDDCD6; --ink:#41302C; --dim:#94756B;
+  --rose:#B44E6B; --rose-wash:rgba(180,78,107,0.10); --on-rose:#FFF6F3;
+  /* page chrome */
+  --paper:#F2E4DE; --paper-line:#E4CEC7;
+  --display:ui-rounded,'SF Pro Rounded','Arial Rounded MT Bold',-apple-system,sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --radius:20px;
+  --petal:26px 26px 26px 10px;
+}
+
+html{background:var(--paper)}
+body{
+  background:var(--paper); color:var(--ink); font-family:var(--body);
+  font-size:16px; line-height:1.5; min-height:100vh;
+  padding:36px 20px 72px; overflow-x:hidden;
+}
+
+.wrap{max-width:1360px;margin:0 auto}
+
+.masthead{text-align:center;margin-bottom:10px}
+.eyebrow{
+  font-family:var(--display);font-weight:700;font-size:14px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--rose);
+}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,4.5vw,42px);line-height:1.08;margin:6px 0 10px}
+.sub{color:var(--dim);font-size:15px;max-width:66ch;margin:0 auto}
+.sub b{color:var(--ink);font-weight:600}
+
+.sect{margin-top:56px}
+.sect-head{max-width:760px;margin:0 auto 8px;text-align:center}
+.sect-eye{
+  font-family:var(--display);font-weight:700;font-size:13px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--rose);
+}
+.sect-name{font-family:var(--display);font-weight:700;font-size:28px;margin-top:2px}
+.sect-why{color:var(--dim);font-size:14.5px;margin:8px auto 0;text-align:left}
+.sect-why b{color:var(--ink);font-weight:600}
+.sect-why code{
+  font-size:13px;background:var(--raised);border:1px solid var(--paper-line);
+  border-radius:6px;padding:1px 5px;
+}
+
+/* ---- option panels (part 1: three columns) ---- */
+.options{display:flex;flex-wrap:wrap;gap:40px 30px;justify-content:center;align-items:flex-start;margin-top:30px}
+.option{flex:0 1 392px;min-width:0;display:flex;flex-direction:column}
+.opt-eye{font-family:var(--display);font-weight:700;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--rose);text-align:center}
+.opt-name{font-family:var(--display);font-weight:700;font-size:24px;text-align:center;margin-top:2px}
+.opt-why{color:var(--dim);font-size:13.5px;max-width:44ch;margin:6px auto 0;text-align:center}
+.opt-why b{color:var(--ink);font-weight:600}
+
+/* ---- notes card (+ / −) ---- */
+.notes{
+  background:var(--card);border:1px solid var(--paper-line);border-radius:16px;
+  padding:12px 16px;margin:18px auto 0;max-width:392px;width:100%;
+  font-size:13.5px;color:var(--dim);
+}
+.notes div{display:flex;gap:9px;padding:3px 0;align-items:baseline}
+.notes i{
+  flex:none;font-style:normal;font-family:var(--display);font-weight:700;
+  width:16px;text-align:center;
+}
+.notes .p i{color:var(--rose)}
+.notes .m i{color:var(--ink);opacity:.55}
+.notes b{color:var(--ink);font-weight:600}
+
+/* ---- phone frame (light, as the app is) ---- */
+.phone{
+  width:372px;max-width:94vw;height:690px;margin:18px auto 0;
+  background:var(--bg);border:1px solid var(--paper-line);border-radius:40px;
+  position:relative;overflow:hidden;
+  box-shadow:0 30px 55px -28px rgba(65,48,44,.38), 0 1px 0 rgba(255,255,255,.85) inset;
+}
+.island{
+  position:absolute;top:12px;left:50%;transform:translateX(-50%);
+  width:88px;height:20px;background:#2C2124;border-radius:11px;z-index:6;opacity:.92;
+}
+.scr{position:absolute;inset:0;padding:48px 16px 0;overflow:hidden}
+.phone::after{ /* bottom fade — the list continues */
+  content:'';position:absolute;left:0;right:0;bottom:0;height:64px;
+  background:linear-gradient(180deg,rgba(251,244,241,0),var(--bg) 78%);
+  pointer-events:none;
+}
+
+/* ================================================================
+   App styles, copied from styles.css (only what the frames need)
+   ================================================================ */
+
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+
+.dayhead{margin-bottom:4px;position:relative}
+.dayhead-name{font-family:var(--display);font-weight:700;font-size:26px}
+.dayhead-sub{color:var(--dim);font-size:17px;font-weight:500;font-family:var(--body)}
+
+.trail{display:flex;align-items:center;gap:7px;margin:0 2px 10px}
+.pip{
+  width:11px;height:11px;flex:none;border-radius:50% 50% 50% 22%;
+  transform:rotate(-8deg);border:1.8px solid var(--dim);opacity:.5;
+}
+.pip.on{background:var(--rose);border-color:var(--rose);opacity:1}
+.trail-count{font-family:var(--display);font-weight:700;font-size:13px;color:var(--dim);margin-left:4px}
+
+.restdock{padding:8px 0 10px;margin:0 0 12px}
+.rest-idle{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.restbtn{
+  background:var(--rose);color:var(--on-rose);border-radius:999px;padding:15px 10px;
+  font-family:var(--display);font-weight:700;font-size:18px;text-align:center;
+}
+.restbtn span{font-variant-numeric:tabular-nums;opacity:.8;margin-left:4px}
+.restbtn.heavy{background:var(--raised);color:var(--ink);border:1px solid var(--line)}
+.restbtn .rest-for{
+  display:block;font-family:var(--body);font-weight:600;
+  font-size:11px;opacity:.85;margin:1px 0 0;
+}
+
+.rest-running{
+  position:relative;overflow:hidden;background:var(--card);
+  border:1px solid var(--line);border-radius:999px;padding:11px 18px;
+}
+.rest-fill{
+  position:absolute;top:0;bottom:0;left:0;
+  background:var(--rose-wash);border-right:2px solid var(--rose);
+}
+.rest-row{position:relative;display:flex;align-items:center;gap:10px}
+.rest-time{font-family:var(--display);font-weight:700;font-size:27px;font-variant-numeric:tabular-nums;min-width:70px}
+.rest-label{color:var(--dim);font-size:13px;flex:1}
+.rest-label b{color:var(--ink);font-weight:600}
+.rest-mini{
+  width:40px;height:40px;border-radius:999px;background:var(--raised);
+  border:1px solid var(--line);font-size:16px;color:var(--dim);flex:none;
+  display:grid;place-items:center;
+}
+
+.slots{display:grid;gap:11px;grid-template-columns:minmax(0,1fr)}
+.slot{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.slot-head{display:flex;align-items:baseline;gap:10px}
+.slot-name{font-family:var(--display);font-weight:700;font-size:19px;line-height:1.15}
+.slot-target{
+  font-family:var(--display);font-weight:700;font-size:13.5px;color:var(--dim);
+  white-space:nowrap;margin-left:auto;font-variant-numeric:tabular-nums;
+}
+.slot-cue{color:var(--dim);font-size:14px;margin-top:3px}
+
+.ring{width:40px;height:40px;flex:none;position:relative;align-self:center;margin:-8px 0 -8px -8px;padding:0}
+.ring::before{content:'';position:absolute;inset:8px;border-radius:50%;border:2px solid var(--line)}
+.slot.done .ring::before{background:var(--rose);border-color:var(--rose)}
+.slot.done .ring::after{
+  content:'✓';position:absolute;inset:8px;display:grid;place-items:center;
+  color:var(--on-rose);font-size:13px;font-weight:700;
+}
+.slot.done .slot-name,.slot.done .slot-target{opacity:.45}
+
+.slot-foot{display:flex;align-items:center;gap:10px;margin-top:10px}
+.chip{
+  display:inline-flex;align-items:baseline;gap:5px;background:var(--raised);
+  border:1px solid var(--line);border-radius:999px;padding:8px 16px;
+}
+.chip-num{font-family:var(--display);font-weight:700;font-size:21px;font-variant-numeric:tabular-nums}
+.chip-unit{color:var(--dim);font-size:13px}
+.chip-reps{font-family:var(--display);font-weight:700;font-size:16px;color:var(--dim);font-variant-numeric:tabular-nums}
+.notebtn{margin-left:auto;color:var(--dim);font-size:14px;padding:8px 6px}
+
+/* ================================================================
+   Part 1 — pairing proposals
+   ================================================================ */
+
+/* Option A · the rose mat: two untouched cards on one tinted mat.
+   Reads by geometry (inset, shared corners, tag) — never by tint alone. */
+.pairmat{
+  background:var(--rose-wash);border:1px solid #E9CBCD;
+  border-radius:var(--petal);padding:7px;display:grid;gap:7px;
+}
+.pairtag{
+  display:flex;align-items:center;gap:7px;padding:3px 8px 4px;
+  font-family:var(--display);font-weight:700;font-size:12.5px;color:var(--rose);
+}
+.pairtag svg{width:14px;height:14px;flex:none}
+
+/* Option B · the duet card: one card, two voices */
+.duet-eye{
+  display:flex;align-items:center;gap:7px;
+  font-family:var(--display);font-weight:700;font-size:12.5px;color:var(--rose);
+  margin-bottom:9px;
+}
+.duet-eye svg{width:14px;height:14px;flex:none}
+.duet-row + .duet-row{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
+.pip.fused{width:26px;border-radius:9px 9px 9px 4px;transform:none}
+
+/* Option C · the volley: a whisper on the cards, the coach in the pill */
+.tiechip{
+  display:inline-flex;align-items:center;gap:4px;align-self:center;
+  font-family:var(--display);font-weight:700;font-size:11px;color:var(--rose);
+  background:var(--rose-wash);border:1px solid #E9CBCD;border-radius:999px;
+  padding:2px 8px;white-space:nowrap;
+}
+.tiechip svg{width:11px;height:11px}
+
+/* ================================================================
+   Part 2 — rest-dock variants
+   ================================================================ */
+
+.vrow{
+  display:flex;flex-wrap:wrap;gap:22px 34px;justify-content:center;
+  align-items:flex-start;margin-top:34px;
+}
+.vinfo{flex:0 1 330px;min-width:280px}
+.vinfo .opt-eye,.vinfo .opt-name{text-align:left}
+.vinfo .opt-why{margin:6px 0 0;max-width:none;text-align:left}
+.vinfo .notes{margin:14px 0 0;max-width:none}
+.strips{display:flex;flex-wrap:wrap;gap:18px;justify-content:center}
+.strip-col{display:flex;flex-direction:column;align-items:center}
+.statecap{
+  font-family:var(--display);font-weight:700;font-size:11.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:8px;
+}
+.statecap b{color:var(--ink)}
+.strip{
+  width:340px;max-width:92vw;height:196px;background:var(--bg);
+  border:1px solid var(--paper-line);border-radius:22px;
+  padding:14px 14px 0;overflow:hidden;position:relative;
+  box-shadow:0 16px 30px -18px rgba(65,48,44,.3);
+}
+.strip::after{
+  content:'';position:absolute;left:0;right:0;bottom:0;height:44px;
+  background:linear-gradient(180deg,rgba(251,244,241,0),var(--bg) 80%);
+}
+.strip .restdock{padding:0 0 10px}
+
+/* V1 · even hands — twin quiet pills, the words carry the advice */
+.restbtn.even{background:var(--raised);color:var(--ink);border:1px solid var(--line)}
+.restbtn.even span{opacity:1;color:var(--dim)}
+.restbtn.even .rest-for{color:var(--rose);opacity:1}
+
+/* V2 · two roses — symmetric solids, advice as a whispered line */
+.restbtn.solid2{background:var(--rose);color:var(--on-rose);border:none}
+
+/* V3 · one press — a single primary that already knows the tier */
+.onepress{display:grid;grid-template-columns:1fr 92px;gap:10px}
+.op-main{
+  background:var(--rose);color:var(--on-rose);border-radius:999px;padding:12px 10px;
+  font-family:var(--display);font-weight:700;font-size:18px;text-align:center;
+}
+.op-main span{font-variant-numeric:tabular-nums;opacity:.8;margin-left:4px}
+.op-main .rest-for{display:block;font-family:var(--body);font-weight:600;font-size:11px;opacity:.85;margin:1px 0 0}
+.op-alt{
+  background:var(--raised);border:1px solid var(--line);border-radius:999px;
+  font-family:var(--display);font-weight:700;font-size:15px;color:var(--ink);
+  display:grid;place-content:center;line-height:1.15;text-align:center;
+}
+.op-alt small{display:block;font-family:var(--body);font-weight:600;font-size:10.5px;color:var(--dim)}
+
+/* V4 · the spoken line — buttons never change; a sentence carries it */
+.v4cap{
+  display:flex;align-items:center;gap:6px;margin:0 4px 8px;
+  font-family:var(--display);font-weight:700;font-size:13.5px;color:var(--rose);
+}
+.v4cap svg{width:13px;height:13px;flex:none}
+
+.reco{
+  max-width:760px;margin:44px auto 0;background:var(--card);
+  border:1px solid var(--paper-line);border-radius:var(--petal);
+  padding:18px 22px;font-size:14.5px;color:var(--dim);
+}
+.reco b{color:var(--ink);font-weight:600}
+.reco .eyebrow{display:block;margin-bottom:6px}
+.reco p + p{margin-top:8px}
+
+.foot{color:var(--dim);font-size:12.5px;text-align:center;margin-top:52px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="masthead">
+  <div class="eyebrow">Forte · design options</div>
+  <h1>Duplas &amp; the rest dock</h1>
+  <p class="sub">Two questions from the gym floor. <b>One:</b> the program has exercises that are meant to be
+  paired — overhead press and chin-ups, alternating with ~1:30 between — and pairing isn't in the design at all.
+  <b>Two:</b> the idle rest dock highlights the suggested tier with solid rose, which makes the left pill look
+  permanently active. Three shapes for the first, four for the second.</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- PART 1 · PAIRED EXERCISES                                     -->
+<!-- ============================================================ -->
+<div class="sect">
+  <div class="sect-head">
+    <div class="sect-eye">Part 1 · Paired exercises</div>
+    <div class="sect-name">Where does the pairing live?</div>
+    <p class="sect-why">Forte has no per-set logging — a slot is one card, one ring, one weight. So a pair is a small
+    thing to say: <b>these two alternate, rest 1:30 between sets</b>. The three options say it in three different
+    places: on a shared mat, inside one card, or in the rest pill itself. Data-wise all three are the same tiny
+    change — a shared <code>pair</code> id on two adjacent slots. Copy note: the tag says <b>Dupla</b> — pair,
+    in Carolina's Portuguese — swap for “Pair” if too cute.</p>
+  </div>
+
+  <div class="options">
+
+    <!-- Option A · the rose mat -->
+    <div class="option">
+      <div class="opt-eye">Option A</div>
+      <div class="opt-name">The rose mat</div>
+      <p class="opt-why">Both cards stay exactly as they are — they just sit together on one tinted mat with a single
+      tag. The lightest possible touch.</p>
+      <div class="phone"><div class="island"></div><div class="scr">
+        <div class="dayhead"><div class="dayhead-name">Voo <span class="dayhead-sub">Hinge · chin-up · press</span></div></div>
+        <div class="trail">
+          <div class="pip on"></div><div class="pip on"></div><div class="pip on"></div>
+          <div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div>
+          <span class="trail-count">3 of 8</span>
+        </div>
+        <div class="restdock"><div class="rest-idle">
+          <button class="restbtn">Rest <span>1:30</span></button>
+          <button class="restbtn heavy">Rest <span>3:00</span></button>
+        </div></div>
+        <div class="slots">
+          <div class="slot done">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">DB Romanian deadlift</div>
+              <div class="slot-target">4×6–8 · RIR 2–3</div>
+            </div>
+          </div>
+          <div class="pairmat">
+            <div class="pairtag">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M7 8h13m0 0-3-3m3 3-3 3M17 16H4m0 0 3-3m-3 3 3 3"/></svg>
+              Dupla · alternate sets · rest 1:30 between
+            </div>
+            <div class="slot">
+              <div class="slot-head">
+                <button class="ring"></button>
+                <div class="slot-name">DB standing overhead press</div>
+                <div class="slot-target">3×6–8</div>
+              </div>
+              <div class="slot-cue">Ribs down — reach tall at the top</div>
+              <div class="slot-foot">
+                <span class="chip"><span class="chip-num">17.5</span><span class="chip-unit">lb</span><span class="chip-reps">×8</span></span>
+                <button class="notebtn">✎ note</button>
+              </div>
+            </div>
+            <div class="slot">
+              <div class="slot-head">
+                <button class="ring"></button>
+                <div class="slot-name">Chin-up progression</div>
+                <div class="slot-target">3×6–10 · assisted</div>
+              </div>
+              <div class="slot-cue">Assisted machine — lower is harder</div>
+              <div class="slot-foot">
+                <span class="chip"><span class="chip-num">60</span><span class="chip-unit">lb</span><span class="chip-reps">×8</span></span>
+                <button class="notebtn">✎ note</button>
+              </div>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">Push-up practice</div>
+              <div class="slot-target">2–3 easy sets</div>
+            </div>
+            <div class="slot-cue">Slightly easier version than Terra — crisp reps</div>
+          </div>
+        </div>
+      </div></div>
+      <div class="notes">
+        <div class="p"><i>+</i><span>Smallest change that says it — cards untouched, <b>done-fold still works</b> (a finished card collapses inside the mat).</span></div>
+        <div class="p"><i>+</i><span>Reads by geometry — inset, shared petal corner, tag — not by tint, so the pale wash doesn't have to carry it alone.</span></div>
+        <div class="m"><i>−</i><span>Annotation only: nothing guides the ping-pong once she's resting.</span></div>
+        <div class="m"><i>−</i><span>A third nesting level (mat → card) adds a little visual weight to the list.</span></div>
+      </div>
+    </div>
+
+    <!-- Option B · the duet card -->
+    <div class="option">
+      <div class="opt-eye">Option B</div>
+      <div class="opt-name">The duet card</div>
+      <p class="opt-why">The pair becomes one card with two voices — one station in the gym, one card in the list.
+      Each half keeps its own ring and chip; the shared rest is stated once.</p>
+      <div class="phone"><div class="island"></div><div class="scr">
+        <div class="dayhead"><div class="dayhead-name">Voo <span class="dayhead-sub">Hinge · chin-up · press</span></div></div>
+        <div class="trail">
+          <div class="pip on"></div><div class="pip on"></div><div class="pip on"></div>
+          <div class="pip fused"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div>
+          <span class="trail-count">3 of 8</span>
+        </div>
+        <div class="restdock"><div class="rest-idle">
+          <button class="restbtn">Rest <span>1:30</span></button>
+          <button class="restbtn heavy">Rest <span>3:00</span></button>
+        </div></div>
+        <div class="slots">
+          <div class="slot done">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">DB Romanian deadlift</div>
+              <div class="slot-target">4×6–8 · RIR 2–3</div>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="duet-eye">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M7 8h13m0 0-3-3m3 3-3 3M17 16H4m0 0 3-3m-3 3 3 3"/></svg>
+              Dupla · alternate sets · rest 1:30 between
+            </div>
+            <div class="duet-row">
+              <div class="slot-head">
+                <button class="ring"></button>
+                <div class="slot-name">DB standing overhead press</div>
+                <div class="slot-target">3×6–8</div>
+              </div>
+              <div class="slot-cue">Ribs down — reach tall at the top</div>
+              <div class="slot-foot">
+                <span class="chip"><span class="chip-num">17.5</span><span class="chip-unit">lb</span><span class="chip-reps">×8</span></span>
+                <button class="notebtn">✎ note</button>
+              </div>
+            </div>
+            <div class="duet-row">
+              <div class="slot-head">
+                <button class="ring"></button>
+                <div class="slot-name">Chin-up progression</div>
+                <div class="slot-target">3×6–10 · assisted</div>
+              </div>
+              <div class="slot-cue">Assisted machine — lower is harder</div>
+              <div class="slot-foot">
+                <span class="chip"><span class="chip-num">60</span><span class="chip-unit">lb</span><span class="chip-reps">×8</span></span>
+                <button class="notebtn">✎ note</button>
+              </div>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">Push-up practice</div>
+              <div class="slot-target">2–3 easy sets</div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="notes">
+        <div class="p"><i>+</i><span>Structural, not decorative — <b>impossible to read the day and miss the pair</b>. The trail even fuses their two pips into one wide petal.</span></div>
+        <div class="p"><i>+</i><span>One station, one card: matches how she actually moves through the gym.</span></div>
+        <div class="m"><i>−</i><span>A tall card breaks the list's even rhythm; two rings inside one card is new grammar.</span></div>
+        <div class="m"><i>−</i><span>Done-fold needs a new rule — fold each half as its ring is tapped, collapse the card when both are.</span></div>
+      </div>
+    </div>
+
+    <!-- Option C · the volley -->
+    <div class="option">
+      <div class="opt-eye">Option C</div>
+      <div class="opt-name">The volley</div>
+      <p class="opt-why">Cards get only a whisper — a tiny tie chip. The pairing does its real work in the rest pill,
+      which names what's next: <b>rest, then the other one</b>. Coaching at the moment it matters.</p>
+      <div class="phone"><div class="island"></div><div class="scr">
+        <div class="dayhead"><div class="dayhead-name">Voo <span class="dayhead-sub">Hinge · chin-up · press</span></div></div>
+        <div class="trail">
+          <div class="pip on"></div><div class="pip on"></div><div class="pip on"></div>
+          <div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div>
+          <span class="trail-count">3 of 8</span>
+        </div>
+        <div class="restdock">
+          <div class="rest-running">
+            <div class="rest-fill" style="width:38%"></div>
+            <div class="rest-row">
+              <div class="rest-time">0:56</div>
+              <span class="rest-label">resting · <b>then Chin&#8209;ups</b></span>
+              <button class="rest-mini">↻</button>
+              <button class="rest-mini">✕</button>
+            </div>
+          </div>
+        </div>
+        <div class="slots">
+          <div class="slot done">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">DB Romanian deadlift</div>
+              <div class="slot-target">4×6–8 · RIR 2–3</div>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">DB standing overhead press</div>
+              <span class="tiechip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M7 8h13m0 0-3-3m3 3-3 3M17 16H4m0 0 3-3m-3 3 3 3"/></svg>dupla</span>
+              <div class="slot-target">3×6–8</div>
+            </div>
+            <div class="slot-cue">Ribs down — reach tall at the top</div>
+            <div class="slot-foot">
+              <span class="chip"><span class="chip-num">17.5</span><span class="chip-unit">lb</span><span class="chip-reps">×8</span></span>
+              <button class="notebtn">✎ note</button>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">Chin-up progression</div>
+              <span class="tiechip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M7 8h13m0 0-3-3m3 3-3 3M17 16H4m0 0 3-3m-3 3 3 3"/></svg>dupla</span>
+              <div class="slot-target">3×6–10</div>
+            </div>
+            <div class="slot-cue">Assisted machine — lower is harder</div>
+            <div class="slot-foot">
+              <span class="chip"><span class="chip-num">60</span><span class="chip-unit">lb</span><span class="chip-reps">×8</span></span>
+              <button class="notebtn">✎ note</button>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">Push-up practice</div>
+              <div class="slot-target">2–3 easy sets</div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="notes">
+        <div class="p"><i>+</i><span>The guidance lands <b>where she's actually looking</b> — the running pill — right when the “which one now?” question exists.</span></div>
+        <div class="p"><i>+</i><span>Near-zero weight in the list; pressing Rest from a paired slot auto-picks the 1:30 tier.</span></div>
+        <div class="m"><i>−</i><span>Invisible until the first rest — the day list barely announces the pair.</span></div>
+        <div class="m"><i>−</i><span>“Then Chin-ups” means the app tracks whose turn is next — a small alternation state, though still no per-set logging.</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="reco">
+    <span class="eyebrow">Read on part 1</span>
+    <p>These compose. <b>A or B is the map</b> (see the pair while planning the station), <b>C is the turn-by-turn</b>
+    (know what's next while resting). The strongest build is probably <b>B + C's rest pill</b> — structural card, guided
+    rest — with <b>A alone as the honest cheap first step</b> if you want to ship something this week. All three want the
+    same seed change: a shared <code>pair</code> id on two adjacent slots, rest between = the normal tier.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PART 2 · REST DOCK                                            -->
+<!-- ============================================================ -->
+<div class="sect">
+  <div class="sect-head">
+    <div class="sect-eye">Part 2 · The rest dock</div>
+    <div class="sect-name">Nothing is “on” before she presses</div>
+    <p class="sect-why"><b>Diagnosis.</b> <code>restDockHTML()</code> paints the <i>suggested</i> tier solid rose and
+    mutes the other. But solid rose is Forte's <i>selected</i> state everywhere else — rungs, segments, pips — so the
+    filled pill reads as “already running.” Since most slots rest normal, that's the left pill nearly all session: a
+    stuck-looking toggle. And when a heavy slot comes up, the fill jumps sides — which reads as state that changed by
+    itself, not advice. Each variant below is shown in both suggestion states, so you can check that nothing appears to
+    flip on its own.</p>
+  </div>
+
+  <!-- current -->
+  <div class="vrow">
+    <div class="vinfo">
+      <div class="opt-eye">Today</div>
+      <div class="opt-name">Current behavior</div>
+      <p class="opt-why">The suggestion is expressed as fill. Left: what almost every slot looks like. Right: the swap
+      when a heavy slot is up — same two buttons, opposite paint.</p>
+    </div>
+    <div class="strips">
+      <div class="strip-col">
+        <div class="statecap">current: <b>OH press</b> · rests normal</div>
+        <div class="strip">
+          <div class="restdock"><div class="rest-idle">
+            <button class="restbtn">Rest <span>1:30</span></button>
+            <button class="restbtn heavy">Rest <span>3:00</span></button>
+          </div></div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">DB standing overhead press</div>
+              <div class="slot-target">3×6–8</div>
+            </div>
+            <div class="slot-cue">Ribs down — reach tall at the top</div>
+          </div>
+        </div>
+      </div>
+      <div class="strip-col">
+        <div class="statecap">current: <b>Back squat</b> · rests long</div>
+        <div class="strip">
+          <div class="restdock"><div class="rest-idle">
+            <button class="restbtn heavy">Rest <span>1:30</span></button>
+            <button class="restbtn">Rest <span>3:00</span><span class="rest-for">Back squat rests long</span></button>
+          </div></div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">Back squat</div>
+              <div class="slot-target">4×8–12 · RIR 2–3</div>
+            </div>
+            <div class="slot-cue">Upright torso, full depth</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- V1 -->
+  <div class="vrow">
+    <div class="vinfo">
+      <div class="opt-eye">Variant 1</div>
+      <div class="opt-name">Even hands</div>
+      <p class="opt-why">Both pills identical and quiet. The suggestion is a small rose line of <i>words</i> inside the
+      suggested pill — labeled advice can't be mistaken for state.</p>
+      <div class="notes">
+        <div class="p"><i>+</i><span>Nothing looks pressed; the advice says <b>why</b>, so it can't read as a toggle.</span></div>
+        <div class="p"><i>+</i><span>Buttons keep their positions and their paint across states.</span></div>
+        <div class="m"><i>−</i><span>The dock loses its rose moment — the day view's main action goes quiet, and two matte pills can read as inputs rather than the thing to press.</span></div>
+      </div>
+    </div>
+    <div class="strips">
+      <div class="strip-col">
+        <div class="statecap">current: <b>OH press</b> · rests normal</div>
+        <div class="strip">
+          <div class="restdock"><div class="rest-idle">
+            <button class="restbtn even">Rest <span>1:30</span><span class="rest-for">for OH press</span></button>
+            <button class="restbtn even">Rest <span>3:00</span></button>
+          </div></div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">DB standing overhead press</div>
+              <div class="slot-target">3×6–8</div>
+            </div>
+            <div class="slot-cue">Ribs down — reach tall at the top</div>
+          </div>
+        </div>
+      </div>
+      <div class="strip-col">
+        <div class="statecap">current: <b>Back squat</b> · rests long</div>
+        <div class="strip">
+          <div class="restdock"><div class="rest-idle">
+            <button class="restbtn even">Rest <span>1:30</span></button>
+            <button class="restbtn even">Rest <span>3:00</span><span class="rest-for">Back squat rests long</span></button>
+          </div></div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">Back squat</div>
+              <div class="slot-target">4×8–12 · RIR 2–3</div>
+            </div>
+            <div class="slot-cue">Upright torso, full depth</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- V2 -->
+  <div class="vrow">
+    <div class="vinfo">
+      <div class="opt-eye">Variant 2</div>
+      <div class="opt-name">Two roses</div>
+      <p class="opt-why">Make them symmetric the other way: both solid rose — two equally real actions, which is the
+      truth. The suggestion is only the whispered line under the right duration.</p>
+      <div class="notes">
+        <div class="p"><i>+</i><span>Kills the “one is on” read at the root — <b>symmetry can't look like state</b> — and the dock keeps its warmth.</span></div>
+        <div class="p"><i>+</i><span>Smallest diff of the four: one class and the microcopy rule.</span></div>
+        <div class="m"><i>−</i><span>Two big rose pills is a lot of rose; the advice line is easy to skim past mid-set.</span></div>
+      </div>
+    </div>
+    <div class="strips">
+      <div class="strip-col">
+        <div class="statecap">current: <b>OH press</b> · rests normal</div>
+        <div class="strip">
+          <div class="restdock"><div class="rest-idle">
+            <button class="restbtn solid2">Rest <span>1:30</span><span class="rest-for">right for OH press</span></button>
+            <button class="restbtn solid2">Rest <span>3:00</span></button>
+          </div></div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">DB standing overhead press</div>
+              <div class="slot-target">3×6–8</div>
+            </div>
+            <div class="slot-cue">Ribs down — reach tall at the top</div>
+          </div>
+        </div>
+      </div>
+      <div class="strip-col">
+        <div class="statecap">current: <b>Back squat</b> · rests long</div>
+        <div class="strip">
+          <div class="restdock"><div class="rest-idle">
+            <button class="restbtn solid2">Rest <span>1:30</span></button>
+            <button class="restbtn solid2">Rest <span>3:00</span><span class="rest-for">Back squat rests long</span></button>
+          </div></div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">Back squat</div>
+              <div class="slot-target">4×8–12 · RIR 2–3</div>
+            </div>
+            <div class="slot-cue">Upright torso, full depth</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- V3 -->
+  <div class="vrow">
+    <div class="vinfo">
+      <div class="opt-eye">Variant 3</div>
+      <div class="opt-name">One press</div>
+      <p class="opt-why">The app already knows which tier the slot wants — so show <b>one</b> primary that says it, with
+      the other duration demoted to a small escape hatch. “One-press rest,” literally.</p>
+      <div class="notes">
+        <div class="p"><i>+</i><span>Zero ambiguity: one solid pill = the thing to press. Truest to the app's founding line.</span></div>
+        <div class="p"><i>+</i><span>Frees dock width; the advice sits inside the button she'll actually hit.</span></div>
+        <div class="m"><i>−</i><span>The duration <b>value</b> now moves between positions across slots — the old flip problem in smaller print.</span></div>
+        <div class="m"><i>−</i><span>Demotes a choice the two-tier design made deliberately.</span></div>
+      </div>
+    </div>
+    <div class="strips">
+      <div class="strip-col">
+        <div class="statecap">current: <b>OH press</b> · rests normal</div>
+        <div class="strip">
+          <div class="restdock"><div class="onepress">
+            <button class="op-main">Rest <span>1:30</span><span class="rest-for">for OH press</span></button>
+            <button class="op-alt">3:00<small>instead</small></button>
+          </div></div>
+          <div class="slot" style="margin-top:10px">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">DB standing overhead press</div>
+              <div class="slot-target">3×6–8</div>
+            </div>
+            <div class="slot-cue">Ribs down — reach tall at the top</div>
+          </div>
+        </div>
+      </div>
+      <div class="strip-col">
+        <div class="statecap">current: <b>Back squat</b> · rests long</div>
+        <div class="strip">
+          <div class="restdock"><div class="onepress">
+            <button class="op-main">Rest <span>3:00</span><span class="rest-for">Back squat rests long</span></button>
+            <button class="op-alt">1:30<small>instead</small></button>
+          </div></div>
+          <div class="slot" style="margin-top:10px">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">Back squat</div>
+              <div class="slot-target">4×8–12 · RIR 2–3</div>
+            </div>
+            <div class="slot-cue">Upright torso, full depth</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- V4 -->
+  <div class="vrow">
+    <div class="vinfo">
+      <div class="opt-eye">Variant 4</div>
+      <div class="opt-name">The spoken line</div>
+      <p class="opt-why">The buttons never change at all — twin quiet pills, fixed paint, fixed positions. The
+      suggestion lives in one small rose sentence above them, in the app's own voice.</p>
+      <div class="notes">
+        <div class="p"><i>+</i><span><b>Absolutely nothing flips</b> — the buttons are furniture; only the sentence changes, and sentences read as advice.</span></div>
+        <div class="p"><i>+</i><span>Room for warmer, more specific coaching copy per slot.</span></div>
+        <div class="m"><i>−</i><span>Adds a line of height to a sticky dock, and quiet buttons again mute the main action.</span></div>
+      </div>
+    </div>
+    <div class="strips">
+      <div class="strip-col">
+        <div class="statecap">current: <b>OH press</b> · rests normal</div>
+        <div class="strip">
+          <div class="restdock">
+            <div class="v4cap">
+              <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>
+              OH press — 1:30 is plenty
+            </div>
+            <div class="rest-idle">
+              <button class="restbtn even">Rest <span>1:30</span></button>
+              <button class="restbtn even">Rest <span>3:00</span></button>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">DB standing overhead press</div>
+              <div class="slot-target">3×6–8</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="strip-col">
+        <div class="statecap">current: <b>Back squat</b> · rests long</div>
+        <div class="strip">
+          <div class="restdock">
+            <div class="v4cap">
+              <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>
+              Back squat rests long — take 3:00
+            </div>
+            <div class="rest-idle">
+              <button class="restbtn even">Rest <span>1:30</span></button>
+              <button class="restbtn even">Rest <span>3:00</span></button>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="slot-head">
+              <button class="ring"></button>
+              <div class="slot-name">Back squat</div>
+              <div class="slot-target">4×8–12 · RIR 2–3</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="reco">
+    <span class="eyebrow">Read on part 2</span>
+    <p><b>My lean: Variant 2</b> — it fixes the misread at its root (asymmetric paint) with the smallest diff, and the
+    dock keeps being the day view's one warm action zone. <b>Variant 3 is the more radical candidate</b> if you're
+    willing to demote the tier choice; it's the most on-brand but re-imports a small flip and hides an option the
+    two-tier design chose on purpose. V1 and V4 both solve the ambiguity fully but pay for it by muting the dock —
+    V4 is the better of those two if pairing lands, since its caption line is also a natural home for “dupla —
+    then Chin-ups.”</p>
+    <p>All four keep state on luminance, not hue — solid rose vs. matte shell — so nothing changes for color-blind
+    eyes checking “what's pressed.”</p>
+  </div>
+</div>
+
+<p class="foot">Forte · Morning Rosé — pairing &amp; rest-dock options · branch <b>mockup/pairs-rest-dock</b> · preview/pairs-and-rest-dock.html</p>
+
+</div>
+</body>
+</html>
