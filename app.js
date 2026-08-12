@@ -58,7 +58,7 @@ function patchProgram() {
   const p = state.program;
   if (!p) return;
   const v = parseFloat(p.specVersion) || 0;
-  if (v >= 1.2) return;
+  if (v >= 1.3) return;
 
   // 1.1: Voo's push-up practice carries the full progression ladder —
   // same menu as Terra, cue marks it as the slightly easier exposure.
@@ -95,7 +95,28 @@ function patchProgram() {
     }
   }
 
-  p.specVersion = '1.2';
+  // 1.3: Carolina's own pairing map. Terra's hang stands alone after
+  // all — carry + Pallof are the pair. Voo pairs the press with
+  // chin-ups, and push-up practice + hollow body + calves cycle as a
+  // quick trio at 1:00 between moves.
+  if (v < 1.3) {
+    const terra = p.days.find((d) => d.id === 'terra');
+    const hang = terra && terra.slots.find((s) => slug(s.name) === 'hang-grip');
+    if (hang) { delete hang.pair; delete hang.short; }
+    const voo = p.days.find((d) => d.id === 'voo');
+    if (voo) {
+      const bySlug = {};
+      voo.slots.forEach((s) => { bySlug[slug(s.name)] = s; });
+      const set = (key, fields) => { if (bySlug[key]) Object.assign(bySlug[key], fields); };
+      set('db-standing-overhead-press', { pair: 'a', short: 'the press' });
+      set('chin-up-progression', { pair: 'a', short: 'chin-ups' });
+      set('push-up-practice', { pair: 'b', short: 'push-ups', pairRest: 60 });
+      set('hollow-body', { pair: 'b', short: 'hollow body', pairRest: 60 });
+      set('calf-single-leg', { pair: 'b', short: 'calves', pairRest: 60 });
+    }
+  }
+
+  p.specVersion = '1.3';
   save();
 }
 

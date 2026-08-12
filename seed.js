@@ -1,4 +1,4 @@
-// Forte — Carolina's program seed (v1.2)
+// Forte — Carolina's program seed (v1.3)
 // This is only the FIRST-RUN seed. After first launch the program lives in
 // localStorage and is edited in-app; changes here won't overwrite it.
 //
@@ -9,6 +9,7 @@
 // pair: slots sharing a key are done together, alternating sets — 1:30
 //   between moves is the right rest, and the card + rest dock say so.
 //   short: the name partners use when pointing at this slot.
+//   pairRest: optional quicker rest (seconds) the group takes instead.
 //
 // Terra = grounded day (squat, push-up, hips). Voo = flight day (hinge,
 // chin-up, press). Push-up appears on both days on purpose: frequency is
@@ -16,7 +17,7 @@
 // Voo is lighter practice.
 
 const SEED_PROGRAM = {
-  specVersion: '1.2',
+  specVersion: '1.3',
   days: [
     {
       id: 'terra',
@@ -67,7 +68,7 @@ const SEED_PROGRAM = {
         },
         {
           id: 't7', name: 'Hang / grip', target: '2×30–45 s',
-          track: false, rest: 'normal', pair: 'b', short: 'hang',
+          track: false, rest: 'normal',
           menu: ['Active→passive hang', 'Offset grip', 'Single-arm assisted', 'Traverse the bar'],
           cue: 'Active shoulders',
         },
@@ -95,17 +96,17 @@ const SEED_PROGRAM = {
         },
         {
           id: 'v3', name: 'DB standing overhead press', target: '3×6–8 · RIR 2–3',
-          track: true, reps: true, rest: 'normal',
+          track: true, reps: true, rest: 'normal', pair: 'a', short: 'the press',
           cue: 'Ribs down — reach tall at the top',
         },
         {
           id: 'v4', name: 'Chin-up progression', target: '3×6–10 · assisted',
-          track: true, reps: true, rest: 'normal',
+          track: true, reps: true, rest: 'normal', pair: 'a', short: 'chin-ups',
           cue: 'Assisted machine — the chip tracks the assistance, lower is harder. 3×10 crisp → one pin less, back to 6s',
         },
         {
           id: 'v5', name: 'Push-up practice', target: '2–3 easy sets',
-          track: false, rest: 'normal',
+          track: false, rest: 'normal', pair: 'b', short: 'push-ups', pairRest: 60,
           menu: [
             'Incline push-up — hands on a bar or box; lower the height over time',
             'Eccentric-only from the floor — 3–5 s down, reset on knees',
@@ -116,7 +117,7 @@ const SEED_PROGRAM = {
         },
         {
           id: 'v6', name: 'Hollow body', target: '3×20–30 s',
-          track: false, rest: 'normal',
+          track: false, rest: 'normal', pair: 'b', short: 'hollow body', pairRest: 60,
           menu: [
             'Tuck hollow — low back pressed into the floor',
             'One leg extended',
@@ -127,7 +128,7 @@ const SEED_PROGRAM = {
         },
         {
           id: 'v7', name: 'Calf, single-leg', target: '2×8–15 /side',
-          track: true, reps: true, rest: 'normal',
+          track: true, reps: true, rest: 'normal', pair: 'b', short: 'calves', pairRest: 60,
           menu: [
             'Split squat iso w/ calf raise — front foot off a box edge, nothing moves but the heel',
             '3D calf raise — roller into the wall, find the angles',
