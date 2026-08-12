@@ -9,7 +9,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 
 let state = null;
 
@@ -617,11 +617,15 @@ function rungsHTML(slot, entry) {
 
 /* ---- counting ring ---- */
 
-// Sets-per-exercise reads straight off the target string ("4×8–12" → 4),
-// so her installed program needs no migration and in-app edits keep working.
-// No leading "N×" (warm-up, "2–3 easy sets") → the plain one-tap done ring.
+// Sets-per-exercise reads straight off the target string ("4×8–12" → 4,
+// "2–3 easy sets" → 3), so her installed program needs no migration and
+// in-app edits keep working. A "sets" range counts to its top — the ring
+// can sit under-filled on an easy day; the count is a nudge, not a ledger.
+// No match (warm-up's "~5 min") → the plain one-tap done ring.
 function setTarget(slot) {
-  const m = /^(\d+)\s*[×x]/.exec(String(slot.target || '').trim());
+  const t = String(slot.target || '').trim();
+  let m = /^(\d+)\s*[×x]/.exec(t);
+  if (!m) m = /^(?:\d+\s*[–-]\s*)?(\d+)\s+(?:\w+\s+)?sets?\b/.exec(t);
   const n = m ? parseInt(m[1], 10) : 0;
   return n >= 2 && n <= 12 ? n : 0;
 }
@@ -652,7 +656,7 @@ function ringHTML(slot, e) {
   const off = RING_CIRC * (1 - n / total);
   return `
     <button class="ring counting ${done ? 'full' : ''}" data-action="done" data-slot="${slot.id}"
-      aria-label="Count one set" aria-pressed="${done}">
+      aria-label="${done ? 'Reset sets' : 'Count one set'}" aria-pressed="${done}">
       <svg viewBox="0 0 36 36" aria-hidden="true">
         <circle class="ring-track" cx="18" cy="18" r="14"></circle>
         <circle class="ring-arc" cx="18" cy="18" r="14"
@@ -1240,11 +1244,12 @@ document.addEventListener('click', (ev) => {
     const total = setTarget(slot);
     if (total) {
       // Counting ring: each tap banks one set and starts that exercise's
-      // rest; the tap that fills the ring is the old done-tap. Stepping
-      // back off the check (undo) never starts a timer.
+      // rest; the tap that fills the ring is the old done-tap. Tapping
+      // the check clears the exercise back to untouched — one press
+      // recovers any accidental over-taps — and never starts a timer.
       if (e.done) {
         e.done = false;
-        e.sets = total - 1;
+        e.sets = 0;
       } else {
         e.sets = Math.min((e.sets || 0) + 1, total);
         e.done = e.sets >= total;

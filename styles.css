@@ -230,7 +230,7 @@ body::before {
 .rest-running {
   position: relative; overflow: hidden;
   background: var(--card); border: 1px solid var(--line);
-  border-radius: 999px; padding: 11px 18px;
+  border-radius: 999px; padding: 13px 18px;
 }
 .rest-fill {
   position: absolute; top: 0; bottom: 0; left: 0; width: 0;
@@ -239,10 +239,10 @@ body::before {
 }
 .rest-row { position: relative; display: flex; align-items: center; gap: 10px; }
 .rest-time {
-  font-family: var(--display); font-weight: 700; font-size: 27px;
-  font-variant-numeric: tabular-nums; min-width: 70px;
+  font-family: var(--display); font-weight: 700; font-size: 36px;
+  line-height: 1; font-variant-numeric: tabular-nums; min-width: 94px;
 }
-.rest-label { color: var(--dim); font-size: 13px; flex: 1; }
+.rest-label { color: var(--dim); font-size: 14px; flex: 1; }
 .rest-mini {
   width: 40px; height: 40px; border-radius: 999px;
   background: var(--raised); border: 1px solid var(--line);
