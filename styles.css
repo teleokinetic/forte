@@ -309,10 +309,36 @@ body::before {
   color: var(--on-rose); font-size: 13px; font-weight: 700;
 }
 
+/* Counting ring — the done ring grown into a set counter. Each tap banks
+   one set and draws a quarter-turn of rose; the last tap is the old check.
+   The SVG replaces the ::before circle; same 24px visual in the 40px target. */
+.ring.counting::before, .slot.done .ring.counting::after { content: none; }
+.ring.counting svg { position: absolute; inset: 4px; width: 32px; height: 32px; }
+.ring-track { fill: none; stroke: var(--line); stroke-width: 2.5; }
+.ring-arc {
+  fill: none; stroke: var(--rose); stroke-width: 3.5; stroke-linecap: round;
+  transform: rotate(-90deg); transform-origin: center;
+  transition: stroke-dashoffset 0.2s ease;
+}
+.ring.counting.full .ring-track { fill: var(--rose); stroke: var(--rose); }
+.ring-count {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-family: var(--display); font-weight: 700; font-size: 13px;
+  color: var(--rose); font-variant-numeric: tabular-nums;
+}
+.ring.counting.full .ring-count { color: var(--on-rose); }
+
+/* "Set 2 of 4 down" — appears after the first tap, quiet before it. */
+.setline {
+  font-family: var(--display); font-weight: 700; font-size: 13px;
+  color: var(--rose); margin-top: 6px; font-variant-numeric: tabular-nums;
+}
+
 /* A done card settles back to one line — the list shortens as she works. */
 .slot.done .slot-name, .slot.done .slot-target { opacity: 0.45; }
 .slot.done .slot-cue, .slot.done .warmup, .slot.done .rungs,
 .slot.done .rung-detail, .slot.done .slot-foot, .slot.done .pair-note,
+.slot.done .setline,
 .slot.done .chip-edit, .slot.done .note-edit { display: none; }
 
 .warmup {

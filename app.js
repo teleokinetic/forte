@@ -1,14 +1,15 @@
-/* Forte — Carolina's gym companion. One surface, one-press rest (silent).
-   Same engine as Strength Rebuild v2: no per-set logging — tracked slots
-   capture one working weight (prefilled from last session), menu slots
-   take a note. Rest never auto-starts. */
+/* Forte — Carolina's gym companion. One surface, one-press set (silent).
+   Same engine as Strength Rebuild v2 at the bottom: tracked slots capture
+   one working weight (prefilled from last session), menu slots take a note.
+   Sets are counted, never logged — the ring taps once per set and each tap
+   starts that exercise's rest itself; the dock stays for manual rests. */
 
 'use strict';
 
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 let state = null;
 
@@ -354,6 +355,8 @@ function recordSession(dayId, note, auto) {
     const e = a ? a.entries[slot.id] : null;
     const slotNote = e && e.note ? e.note.trim() : '';
     const rung = e && e.rung ? e.rung : '';
+    // Counted sets ride along on the record (still no per-set numbers).
+    const sets = e && e.sets ? Math.min(e.sets, setTarget(slot) || e.sets) : 0;
     if (slot.track) {
       const w = effectiveWeight(dayId, slot);
       const entry = { exerciseId: slug(slot.name), name: slot.name, weight: w === '' ? '' : parseFloat(w), note: slotNote };
@@ -362,10 +365,12 @@ function recordSession(dayId, note, auto) {
         entry.reps = r === '' ? '' : parseInt(r, 10);
       }
       if (rung) entry.rung = rung;
+      if (sets) entry.sets = sets;
       entries.push(entry);
-    } else if (slotNote || rung) {
+    } else if (slotNote || rung || sets) {
       const entry = { exerciseId: slug(slot.name), name: slot.name, weight: '', note: slotNote };
       if (rung) entry.rung = rung;
+      if (sets) entry.sets = sets;
       entries.push(entry);
     }
   }
@@ -424,7 +429,7 @@ window.addEventListener('pageshow', (e) => { if (e.persisted) autoFinishStale();
    whatever she's listening to for the whole rest. End of rest =
    vibration where supported + the dock's visual done state. */
 
-const rest = { running: false, endsAt: 0, total: 0, tier: null, done: false };
+const rest = { running: false, endsAt: 0, total: 0, tier: null, done: false, label: null };
 let restTick = null;
 
 function buzz() {
@@ -446,11 +451,12 @@ function releaseWakeLock() {
 
 /* ---- rest control ---- */
 
-function restStart(tier) {
-  const sec = tier === 'heavy' ? state.settings.restHeavy : normalRestSec();
+function restStart(tier, label, forSlot) {
+  const sec = tier === 'heavy' ? state.settings.restHeavy : normalRestSec(forSlot);
   rest.running = true;
   rest.done = false;
   rest.tier = tier;
+  rest.label = label || null;
   rest.total = sec;
   rest.endsAt = Date.now() + sec * 1000;
   requestWakeLock();
@@ -609,6 +615,62 @@ function rungsHTML(slot, entry) {
     <div class="rung-detail ${detail ? '' : 'hidden'}" data-rungdetail="${slot.id}">${esc(detail)}</div>`;
 }
 
+/* ---- counting ring ---- */
+
+// Sets-per-exercise reads straight off the target string ("4×8–12" → 4),
+// so her installed program needs no migration and in-app edits keep working.
+// No leading "N×" (warm-up, "2–3 easy sets") → the plain one-tap done ring.
+function setTarget(slot) {
+  const m = /^(\d+)\s*[×x]/.exec(String(slot.target || '').trim());
+  const n = m ? parseInt(m[1], 10) : 0;
+  return n >= 2 && n <= 12 ? n : 0;
+}
+
+const NUMWORD = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
+  'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+
+// The rest pill talks like Forte, not a logbook. The last set's rest is
+// just rest — the checked card already says what happened.
+function restLabelFor(n, total) {
+  if (n >= total) return `All ${NUMWORD[total] || total} in — savor this rest`;
+  if (n === total - 1) return 'One left — make it a pretty one';
+  if (n === 1) return "First one's in — shake it out";
+  const w = String(NUMWORD[n] || n);
+  return w.charAt(0).toUpperCase() + w.slice(1) + ` down, ${NUMWORD[total - n] || total - n} to go — breathe easy`;
+}
+
+const RING_CIRC = 2 * Math.PI * 14;
+
+function ringHTML(slot, e) {
+  const done = !!(e && e.done);
+  const total = setTarget(slot);
+  if (!total) {
+    return `<button class="ring" data-action="done" data-slot="${slot.id}"
+      aria-label="Mark done" aria-pressed="${done}"></button>`;
+  }
+  const n = done ? total : Math.min((e && e.sets) || 0, total - 1);
+  const off = RING_CIRC * (1 - n / total);
+  return `
+    <button class="ring counting ${done ? 'full' : ''}" data-action="done" data-slot="${slot.id}"
+      aria-label="Count one set" aria-pressed="${done}">
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <circle class="ring-track" cx="18" cy="18" r="14"></circle>
+        <circle class="ring-arc" cx="18" cy="18" r="14"
+          style="stroke-dasharray:${RING_CIRC.toFixed(2)};stroke-dashoffset:${off.toFixed(2)}"></circle>
+      </svg>
+      <span class="ring-count">${done ? '✓' : (n || '')}</span>
+    </button>`;
+}
+
+// "Set 2 of 4 down" under the cue — hidden until the first tap so resting
+// cards stay quiet (the target already says the plan).
+function setlineHTML(slot, e) {
+  const total = setTarget(slot);
+  if (!total) return '';
+  const n = (e && e.done) ? total : Math.min((e && e.sets) || 0, total - 1);
+  return `<div class="setline ${n ? '' : 'hidden'}" data-setline="${slot.id}">Set ${n} of ${total} down</div>`;
+}
+
 function slotCardHTML(day, slot, onMat) {
   const a = state.active && state.active.dayId === day.id ? state.active.entries[slot.id] : null;
   const note = a && a.note ? a.note : '';
@@ -664,13 +726,13 @@ function slotCardHTML(day, slot, onMat) {
   return `
     <div class="slot ${done ? 'done' : ''}" data-slotcard="${slot.id}">
       <div class="slot-head">
-        <button class="ring" data-action="done" data-slot="${slot.id}"
-          aria-label="Mark done" aria-pressed="${done}"></button>
+        ${ringHTML(slot, a)}
         <div class="slot-name">${esc(slot.name)}</div>
         <div class="slot-target">${esc(slot.target || '')}</div>
       </div>
       ${pairNote}
       ${slot.cue ? `<div class="slot-cue">${esc(slot.cue)}</div>` : ''}
+      ${setlineHTML(slot, a)}
       ${warmup}${menu}
       <div class="slot-foot">
         ${chip}
@@ -709,9 +771,12 @@ function pairRestSec(day, slot) {
   return state.settings.restNormal;
 }
 
-function normalRestSec() {
+// forSlot: the exercise whose set just banked (counting ring) — its
+// group's rest wins even when she works out of order. Dock taps pass
+// nothing and anchor on the first unchecked slot.
+function normalRestSec(forSlot) {
   const dayId = currentDayId();
-  return pairRestSec(findDay(dayId), dayId ? currentSlot(dayId) : null);
+  return pairRestSec(findDay(dayId), forSlot || (dayId ? currentSlot(dayId) : null));
 }
 
 // First unchecked slot in program order — what she's on right now.
@@ -732,7 +797,7 @@ function restDockHTML(dayId) {
         <div class="rest-fill" data-rest-fill style="width:${pct}%"></div>
         <div class="rest-row">
           <div class="rest-time" data-rest-time>${fmtMMSS(left)}</div>
-          <span class="rest-label">resting</span>
+          <span class="rest-label">${esc(rest.label || 'resting')}</span>
           <button class="rest-mini" data-action="rest-restart">↻</button>
           <button class="rest-mini" data-action="rest-cancel">✕</button>
         </div>
@@ -1161,24 +1226,50 @@ document.addEventListener('click', (ev) => {
   const action = t.getAttribute('data-action');
   const dayId = currentDayId();
 
-  if (action === 'rest') { restStart(t.getAttribute('data-tier')); return; }
-  if (action === 'rest-restart') { restStart(rest.tier || 'normal'); return; }
+  if (action === 'rest') { restStart(t.getAttribute('data-tier'), 'Resting — take your time'); return; }
+  if (action === 'rest-restart') { restStart(rest.tier || 'normal', rest.label); return; }
   if (action === 'rest-cancel') { restCancel(); return; }
   if (action === 'rest-ack') { rest.done = false; renderRestDock(); return; }
 
   if (action === 'done') {
     const slotId = t.getAttribute('data-slot');
+    const day = findDay(dayId);
+    const slot = findSlot(day, slotId);
+    if (!slot) return;
     const e = activeEntry(dayId, slotId);
-    e.done = !e.done;
+    const total = setTarget(slot);
+    if (total) {
+      // Counting ring: each tap banks one set and starts that exercise's
+      // rest; the tap that fills the ring is the old done-tap. Stepping
+      // back off the check (undo) never starts a timer.
+      if (e.done) {
+        e.done = false;
+        e.sets = total - 1;
+      } else {
+        e.sets = Math.min((e.sets || 0) + 1, total);
+        e.done = e.sets >= total;
+        // The banked slot rides along so its group's own rest (e.g. the
+        // trio's 1:00) wins even when she works out of order.
+        restStart(slot.rest === 'heavy' ? 'heavy' : 'normal', restLabelFor(e.sets, total), slot);
+      }
+    } else {
+      e.done = !e.done;
+    }
     save();
     const card = $(`[data-slotcard="${slotId}"]`);
-    if (card) card.classList.toggle('done', e.done);
+    if (card) card.classList.toggle('done', !!e.done);
     const mat = card && card.closest('.pairmat');
     if (mat) {
       const cards = [...mat.querySelectorAll('[data-slotcard]')];
       mat.classList.toggle('done', cards.every((c) => c.classList.contains('done')));
     }
-    t.setAttribute('aria-pressed', e.done ? 'true' : 'false');
+    t.outerHTML = ringHTML(slot, e);
+    const line = $(`[data-setline="${slotId}"]`);
+    if (line) {
+      const n = e.done ? total : Math.min(e.sets || 0, total - 1);
+      line.textContent = `Set ${n} of ${total} down`;
+      line.classList.toggle('hidden', !n);
+    }
     renderTrail();
     renderRestDock();
     return;
