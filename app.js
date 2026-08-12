@@ -8,7 +8,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 let state = null;
 
@@ -426,7 +426,7 @@ function releaseWakeLock() {
 /* ---- rest control ---- */
 
 function restStart(tier) {
-  const sec = tier === 'heavy' ? state.settings.restHeavy : state.settings.restNormal;
+  const sec = tier === 'heavy' ? state.settings.restHeavy : normalRestSec();
   rest.running = true;
   rest.done = false;
   rest.tier = tier;
@@ -588,12 +588,14 @@ function rungsHTML(slot, entry) {
     <div class="rung-detail ${detail ? '' : 'hidden'}" data-rungdetail="${slot.id}">${esc(detail)}</div>`;
 }
 
-function slotCardHTML(day, slot) {
+function slotCardHTML(day, slot, onMat) {
   const a = state.active && state.active.dayId === day.id ? state.active.entries[slot.id] : null;
   const note = a && a.note ? a.note : '';
   const done = !!(a && a.done);
   const menu = slot.menu && slot.menu.length ? rungsHTML(slot, a) : '';
-  const partners = pairPartners(day, slot);
+  // On a mat the tag above already says who's paired; the per-card note
+  // is only for pair members that sit apart in the list.
+  const partners = onMat ? [] : pairPartners(day, slot);
   const pairNote = partners.length
     ? `<div class="pair-note">Pair with ${esc(pairNames(day, slot))} — ${partners.length > 1 ? 'cycle through' : 'alternate sets'}</div>`
     : '';
@@ -676,6 +678,21 @@ function pairNames(day, slot) {
   return pairPartners(day, slot).map(shortName).join(' + ');
 }
 
+// A group can carry its own quicker rest (pairRest, seconds). While
+// she's inside the group the normal tier takes it — dock and mat agree.
+function pairRestSec(day, slot) {
+  if (day && slot && slot.pair) {
+    const g = day.slots.find((s) => s.pair === slot.pair && s.pairRest > 0);
+    if (g) return g.pairRest;
+  }
+  return state.settings.restNormal;
+}
+
+function normalRestSec() {
+  const dayId = currentDayId();
+  return pairRestSec(findDay(dayId), dayId ? currentSlot(dayId) : null);
+}
+
 // First unchecked slot in program order — what she's on right now.
 function currentSlot(dayId) {
   const day = findDay(dayId);
@@ -685,7 +702,7 @@ function currentSlot(dayId) {
 }
 
 function restDockHTML(dayId) {
-  const n = state.settings.restNormal, h = state.settings.restHeavy;
+  const h = state.settings.restHeavy;
   if (rest.running) {
     const left = (rest.endsAt - Date.now()) / 1000;
     const pct = Math.max(0, Math.min(100, (1 - left / rest.total) * 100));
@@ -704,12 +721,14 @@ function restDockHTML(dayId) {
     return `<button class="rest-done" data-action="rest-ack">Rest done — go</button>`;
   }
   // The tier the current exercise wants takes the rose and says why.
+  // Inside a group with its own rest, the normal button takes that time.
   const cur = dayId ? currentSlot(dayId) : null;
   const heavyHint = !!(cur && cur.rest === 'heavy');
   const pairFor = !heavyHint && cur ? pairNames(findDay(dayId), cur) : '';
+  const nSec = pairRestSec(findDay(dayId), cur);
   return `
     <div class="rest-idle">
-      <button class="restbtn ${heavyHint ? 'heavy' : ''}" data-action="rest" data-tier="normal">Rest <span>${fmtMMSS(n)}</span>${pairFor ? `<span class="rest-for">Pairs with ${esc(pairFor)}</span>` : ''}</button>
+      <button class="restbtn ${heavyHint ? 'heavy' : ''}" data-action="rest" data-tier="normal">Rest <span>${fmtMMSS(nSec)}</span>${pairFor ? `<span class="rest-for">Pairs with ${esc(pairFor)}</span>` : ''}</button>
       <button class="restbtn ${heavyHint ? '' : 'heavy'}" data-action="rest" data-tier="heavy">Rest <span>${fmtMMSS(h)}</span>${heavyHint ? `<span class="rest-for">${esc(cur.name)} rests long</span>` : ''}</button>
     </div>`;
 }
@@ -740,6 +759,33 @@ function updateRestTime(left) {
   if (f) f.style.width = Math.max(0, Math.min(100, (1 - left / rest.total) * 100)) + '%';
 }
 
+// Consecutive slots sharing a pair key sit together on one rose mat,
+// one tag saying the deal; scattered pair members keep their per-card
+// note instead. The tag goes quiet once every member is done.
+function slotsHTML(day) {
+  const a = state.active && state.active.dayId === day.id ? state.active : null;
+  const groups = [];
+  for (const slot of day.slots) {
+    const last = groups[groups.length - 1];
+    if (last && last.pair && last.pair === slot.pair) last.slots.push(slot);
+    else groups.push({ pair: slot.pair || null, slots: [slot] });
+  }
+  return groups.map((g) => {
+    if (g.slots.length < 2) return g.slots.map((s) => slotCardHTML(day, s)).join('');
+    const allDone = g.slots.every((s) => a && a.entries[s.id] && a.entries[s.id].done);
+    const word = g.slots.length > 2 ? 'Trio · cycle through' : 'Dupla · alternate sets';
+    return `
+      <div class="pairmat ${allDone ? 'done' : ''}">
+        <div class="pairtag">${tieSVG()}${word} · rest ${fmtMMSS(pairRestSec(day, g.slots[0]))} between</div>
+        ${g.slots.map((s) => slotCardHTML(day, s, true)).join('')}
+      </div>`;
+  }).join('');
+}
+
+function tieSVG() {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M7 8h13m0 0-3-3m3 3-3 3M17 16H4m0 0 3-3m-3 3 3 3"/></svg>`;
+}
+
 function viewDay(dayId) {
   const day = findDay(dayId);
   if (!day) { location.hash = '#/'; return ''; }
@@ -751,7 +797,7 @@ function viewDay(dayId) {
     </div>
     <div class="trail" data-trail>${trailHTML(day.id)}</div>
     <div id="restdock" class="restdock">${restDockHTML(day.id)}</div>
-    <div class="slots">${day.slots.map((s) => slotCardHTML(day, s)).join('')}</div>
+    <div class="slots">${slotsHTML(day)}</div>
     <button class="finishbtn" data-action="finish" data-day="${day.id}">Finish session</button>`;
 }
 
@@ -1022,6 +1068,7 @@ function viewSlotEdit(dayId, slotId) {
       <label class="editfield"><span>Menu (one per line)</span>
         <textarea rows="4" data-action="edit-menu">${esc((slot.menu || []).join('\n'))}</textarea></label>
       ${field('Pair (same letter = done together)', 'edit-pair', slot.pair, 'e.g. a')}
+      ${field('Pair rest (seconds — blank = normal tier)', 'edit-pairrest', slot.pairRest, 'e.g. 60')}
       <div class="setrow">
         <div class="setlabel">Track weight</div>
         <button class="seg ${slot.track ? 'on' : ''}" data-action="edit-track">${slot.track ? 'On' : 'Off'}</button>
@@ -1105,6 +1152,11 @@ document.addEventListener('click', (ev) => {
     save();
     const card = $(`[data-slotcard="${slotId}"]`);
     if (card) card.classList.toggle('done', e.done);
+    const mat = card && card.closest('.pairmat');
+    if (mat) {
+      const cards = [...mat.querySelectorAll('[data-slotcard]')];
+      mat.classList.toggle('done', cards.every((c) => c.classList.contains('done')));
+    }
     t.setAttribute('aria-pressed', e.done ? 'true' : 'false');
     renderTrail();
     renderRestDock();
@@ -1349,6 +1401,14 @@ document.addEventListener('input', (ev) => {
     if (!slot) return;
     const v = t.value.trim();
     if (v) slot.pair = v; else delete slot.pair;
+    saveSoon();
+    return;
+  }
+  if (action === 'edit-pairrest') {
+    const { slot } = editedSlot();
+    if (!slot) return;
+    const v = parseInt(t.value, 10);
+    if (v > 0) slot.pairRest = v; else delete slot.pairRest;
     saveSoon();
     return;
   }

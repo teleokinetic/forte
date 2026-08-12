@@ -278,6 +278,21 @@ body::before {
 .slot-cue { color: var(--dim); font-size: 14px; margin-top: 3px; }
 .pair-note { color: var(--rose); font-size: 12.5px; font-weight: 600; margin-top: 3px; }
 
+/* The rose mat — consecutive pair members share one tinted mat. The
+   grouping reads by geometry (inset cards, shared petal, one tag) —
+   never by tint alone. */
+.pairmat {
+  background: var(--rose-wash); border: 1px solid var(--line);
+  border-radius: var(--petal); padding: 7px; display: grid; gap: 7px;
+}
+.pairtag {
+  display: flex; align-items: center; gap: 7px; padding: 3px 8px 4px;
+  font-family: var(--display); font-weight: 700; font-size: 12.5px;
+  color: var(--rose);
+}
+.pairtag svg { width: 14px; height: 14px; flex: none; }
+.pairmat.done .pairtag { display: none; }
+
 /* Done ring — 40px thumb target drawing a 24px circle. */
 .ring {
   width: 40px; height: 40px; flex: none; position: relative;
