@@ -9,7 +9,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.7.0';
 
 let state = null;
 
@@ -59,7 +59,7 @@ function patchProgram() {
   const p = state.program;
   if (!p) return;
   const v = parseFloat(p.specVersion) || 0;
-  if (v >= 1.3) return;
+  if (v >= 1.4) return;
 
   // 1.1: Voo's push-up practice carries the full progression ladder —
   // same menu as Terra, cue marks it as the slightly easier exposure.
@@ -117,7 +117,42 @@ function patchProgram() {
     }
   }
 
-  p.specVersion = '1.3';
+  // 1.4: Nordic curls enter the program. The Pallof crosses to Voo and
+  // stands alone right before the push-up trio — before it, not in it;
+  // a quartet is too much cycling. The Nordic ladder takes its old spot
+  // next to the carry, so the Terra dupla keeps its shape.
+  if (v < 1.4) {
+    const terra = p.days.find((d) => d.id === 'terra');
+    const voo = p.days.find((d) => d.id === 'voo');
+    if (terra && voo) {
+      const i = terra.slots.findIndex((s) => slug(s.name) === 'pallof-press');
+      if (i !== -1) {
+        const [pallof] = terra.slots.splice(i, 1);
+        // Solo now — no pair keys, and the trio's quick rest isn't hers.
+        delete pallof.pair; delete pallof.short; delete pallof.pairRest;
+        const j = voo.slots.findIndex((s) => slug(s.name) === 'push-up-practice');
+        voo.slots.splice(j !== -1 ? j : voo.slots.length, 0, pallof);
+      }
+    }
+    if (terra && !terra.slots.some((s) => slug(s.name) === 'nordic-ladder')) {
+      const c = terra.slots.findIndex((s) => slug(s.name) === 'suitcase-carry');
+      terra.slots.splice(c !== -1 ? c + 1 : terra.slots.length, 0, {
+        id: 't8', name: 'Nordic ladder', target: '3×4–8',
+        track: false, rest: 'normal', pair: 'b', short: 'Nordics',
+        menu: [
+          'Bilateral slider',
+          'Single-leg slider',
+          'Shallow negative',
+          'Full negative',
+          'Band assist',
+          'Full Nordic',
+        ],
+        cue: 'Slow 3–5 s eccentric — own a rung crisp, then move up',
+      });
+    }
+  }
+
+  p.specVersion = '1.4';
   save();
 }
 

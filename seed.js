@@ -1,4 +1,4 @@
-// Forte — Carolina's program seed (v1.3)
+// Forte — Carolina's program seed (v1.4)
 // This is only the FIRST-RUN seed. After first launch the program lives in
 // localStorage and is edited in-app; changes here won't overwrite it.
 //
@@ -17,7 +17,7 @@
 // Voo is lighter practice.
 
 const SEED_PROGRAM = {
-  specVersion: '1.3',
+  specVersion: '1.4',
   days: [
     {
       id: 'terra',
@@ -62,9 +62,17 @@ const SEED_PROGRAM = {
           cue: "Ribcage stacked, don't tip",
         },
         {
-          id: 't6', name: 'Pallof press', target: '2×10–12 /side',
-          track: true, reps: true, rest: 'normal', pair: 'b', short: 'Pallof',
-          cue: "Resist rotation, don't create it",
+          id: 't8', name: 'Nordic ladder', target: '3×4–8',
+          track: false, rest: 'normal', pair: 'b', short: 'Nordics',
+          menu: [
+            'Bilateral slider',
+            'Single-leg slider',
+            'Shallow negative',
+            'Full negative',
+            'Band assist',
+            'Full Nordic',
+          ],
+          cue: 'Slow 3–5 s eccentric — own a rung crisp, then move up',
         },
         {
           id: 't7', name: 'Hang / grip', target: '2×30–45 s',
@@ -103,6 +111,14 @@ const SEED_PROGRAM = {
           id: 'v4', name: 'Chin-up progression', target: '3×6–10 · assisted',
           track: true, reps: true, rest: 'normal', pair: 'a', short: 'chin-ups',
           cue: 'Assisted machine — the chip tracks the assistance, lower is harder. 3×10 crisp → one pin less, back to 6s',
+        },
+        {
+          // Crossed over from Terra in 1.4 — the id rides along so an
+          // in-flight session's entry isn't orphaned. Stands alone on
+          // purpose: the trio stays a trio.
+          id: 't6', name: 'Pallof press', target: '2×10–12 /side',
+          track: true, reps: true, rest: 'normal',
+          cue: "Resist rotation, don't create it",
         },
         {
           id: 'v5', name: 'Push-up practice', target: '2–3 easy sets',
