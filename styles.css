@@ -385,6 +385,9 @@ body::before {
   color: var(--dim); font-variant-numeric: tabular-nums;
 }
 .chip.open .chip-reps { color: var(--ink); }
+/* Reps-only chip (menu slots — push-ups): the reps number IS the value,
+   so it takes the big-numeral treatment instead of trailing dim. */
+.chip.reps-only .chip-reps { font-size: 21px; color: var(--ink); }
 .chip-caret {
   align-self: center; display: inline-block;
   color: var(--dim); font-size: 10px; margin-left: 2px;

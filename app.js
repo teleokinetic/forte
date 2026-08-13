@@ -1,6 +1,8 @@
 /* Forte — Carolina's gym companion. One surface, one-press set (silent).
    Same engine as Strength Rebuild v2 at the bottom: tracked slots capture
    one working weight (prefilled from last session), menu slots take a note.
+   reps: true adds one working-reps number to either kind — alone on the
+   push-up slots, where the rung is the load and reps move the ladder.
    Sets are counted, never logged — the ring taps once per set and each tap
    starts that exercise's rest itself; the dock stays for manual rests. */
 
@@ -9,7 +11,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 
 let state = null;
 
@@ -59,7 +61,7 @@ function patchProgram() {
   const p = state.program;
   if (!p) return;
   const v = parseFloat(p.specVersion) || 0;
-  if (v >= 1.4) return;
+  if (v >= 1.5) return;
 
   // 1.1: Voo's push-up practice carries the full progression ladder —
   // same menu as Terra, cue marks it as the slightly easier exposure.
@@ -152,7 +154,18 @@ function patchProgram() {
     }
   }
 
-  p.specVersion = '1.4';
+  // 1.5: push-ups get the working-reps chip. The ladder moves on "3×8
+  // crisp at one height" but the number had nowhere to live — reps ride
+  // alone on these menu slots (the rung is the load).
+  if (v < 1.5) {
+    for (const day of p.days) {
+      for (const s of day.slots) {
+        if (PUSHUP_IDS.includes(slug(s.name))) s.reps = true;
+      }
+    }
+  }
+
+  p.specVersion = '1.5';
   save();
 }
 
@@ -402,8 +415,14 @@ function recordSession(dayId, note, auto) {
       if (rung) entry.rung = rung;
       if (sets) entry.sets = sets;
       entries.push(entry);
-    } else if (slotNote || rung || sets) {
+    } else if (slotNote || rung || sets || (slot.reps && e && e.reps != null && e.reps !== '')) {
+      // Menu slots record only when touched; once the entry exists, reps
+      // carry prefill — same deal as tracked weights.
       const entry = { exerciseId: slug(slot.name), name: slot.name, weight: '', note: slotNote };
+      if (slot.reps) {
+        const r = effectiveReps(dayId, slot);
+        if (r !== '' && r != null) entry.reps = parseInt(r, 10);
+      }
       if (rung) entry.rung = rung;
       if (sets) entry.sets = sets;
       entries.push(entry);
@@ -761,6 +780,25 @@ function slotCardHTML(day, slot, onMat) {
       </div>`
       : `
       <div class="chip-edit hidden" data-edit="${slot.id}">${weightRow}</div>`;
+  } else if (slot.reps) {
+    // Menu slots can carry the reps chip alone — push-ups: the rung is
+    // the load, this number decides when she moves down a notch.
+    const r = effectiveReps(day.id, slot);
+    const empty = r === '' || r == null;
+    chip = `
+      <button class="chip reps-only ${empty ? 'empty' : ''}" data-action="chip" data-slot="${slot.id}">
+        <span class="chip-add">add reps</span>
+        <span class="chip-reps">×${empty ? '—' : esc(String(r))}</span>
+        <span class="chip-caret">▾</span>
+      </button>`;
+    chipEdit = `
+      <div class="chip-edit hidden" data-edit="${slot.id}">
+        <span class="edit-tag">reps</span>
+        <button class="step" data-action="rstep" data-slot="${slot.id}" data-d="-1">−1</button>
+        <input class="chip-input" type="number" inputmode="numeric"
+               data-action="reps" data-slot="${slot.id}" value="${empty ? '' : esc(String(r))}">
+        <button class="step" data-action="rstep" data-slot="${slot.id}" data-d="1">+1</button>
+      </div>`;
   }
   return `
     <div class="slot ${done ? 'done' : ''}" data-slotcard="${slot.id}">
@@ -949,6 +987,9 @@ function viewFinish(dayId) {
         rtxt = ` ×${r === '' || r == null ? '—' : r}`;
       }
       rows.push(`<div class="rrow"><span class="rname">${esc(slot.name)}</span><span class="rnum"><b>${esc(wtxt)}</b>${esc(rtxt)}</span></div>`);
+    } else if (slot.reps) {
+      const r = effectiveReps(dayId, slot);
+      if (r !== '' && r != null) rows.push(`<div class="rrow"><span class="rname">${esc(slot.name)}</span><span class="rnum"><b>×${esc(String(r))}</b></span></div>`);
     }
     if (rung) extras.push(`${slot.name} — ${rung}`);
   }
@@ -1381,7 +1422,13 @@ document.addEventListener('click', (ev) => {
     const input = $(`[data-edit="${slotId}"] input[data-action="reps"]`);
     if (input) input.value = e.reps;
     const chipReps = $(`[data-slotcard="${slotId}"] .chip-reps`);
-    if (chipReps) chipReps.textContent = '×' + e.reps;
+    if (chipReps) {
+      chipReps.textContent = '×' + e.reps;
+      // On a reps-only chip the reps ARE the value — leave the empty
+      // invite; on tracked chips "add weight" still owns the face.
+      const btn = chipReps.closest('.chip');
+      if (btn.classList.contains('reps-only')) btn.classList.remove('empty');
+    }
     return;
   }
   if (action === 'note') {
@@ -1511,7 +1558,11 @@ document.addEventListener('input', (ev) => {
     e.reps = t.value === '' ? '' : parseInt(t.value, 10);
     if (!Number.isFinite(e.reps)) e.reps = '';
     const chipReps = $(`[data-slotcard="${slotId}"] .chip-reps`);
-    if (chipReps) chipReps.textContent = '×' + (e.reps === '' ? '—' : e.reps);
+    if (chipReps) {
+      chipReps.textContent = '×' + (e.reps === '' ? '—' : e.reps);
+      const btn = chipReps.closest('.chip');
+      if (e.reps !== '' && btn.classList.contains('reps-only')) btn.classList.remove('empty');
+    }
     saveSoon();
     return;
   }

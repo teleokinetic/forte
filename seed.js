@@ -1,10 +1,12 @@
-// Forte — Carolina's program seed (v1.4)
+// Forte — Carolina's program seed (v1.5)
 // This is only the FIRST-RUN seed. After first launch the program lives in
 // localStorage and is edited in-app; changes here won't overwrite it.
 //
 // Model (same as Strength Rebuild v0.3): no per-set logging. Two kinds of slot —
 //   track: true   → one working-weight capture, prefilled from last session
 //   menu: [...]   → task menu, note instead of numbers
+//   reps: true    → one working-reps capture, on either kind — alone on the
+//     push-up slots, where the rung is the load and reps move the ladder
 // rest: 'normal' | 'heavy' picks which rest-button tier the slot suggests.
 // pair: slots sharing a key are done together, alternating sets — 1:30
 //   between moves is the right rest, and the card + rest dock say so.
@@ -17,7 +19,7 @@
 // Voo is lighter practice.
 
 const SEED_PROGRAM = {
-  specVersion: '1.4',
+  specVersion: '1.5',
   days: [
     {
       id: 'terra',
@@ -37,7 +39,7 @@ const SEED_PROGRAM = {
         },
         {
           id: 't2', name: 'Push-up progression', target: '3×5–8',
-          track: false, rest: 'normal', pair: 'a', short: 'push-ups',
+          track: false, reps: true, rest: 'normal', pair: 'a', short: 'push-ups',
           menu: [
             'Incline push-up — hands on a bar or box; lower the height over time',
             'Eccentric-only from the floor — 3–5 s down, reset on knees',
@@ -122,7 +124,7 @@ const SEED_PROGRAM = {
         },
         {
           id: 'v5', name: 'Push-up practice', target: '2–3 easy sets',
-          track: false, rest: 'normal', pair: 'b', short: 'push-ups', pairRest: 60,
+          track: false, reps: true, rest: 'normal', pair: 'b', short: 'push-ups', pairRest: 60,
           menu: [
             'Incline push-up — hands on a bar or box; lower the height over time',
             'Eccentric-only from the floor — 3–5 s down, reset on knees',
