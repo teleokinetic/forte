@@ -11,7 +11,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 
 let state = null;
 
@@ -61,7 +61,7 @@ function patchProgram() {
   const p = state.program;
   if (!p) return;
   const v = parseFloat(p.specVersion) || 0;
-  if (v >= 1.5) return;
+  if (v >= 1.6) return;
 
   // 1.1: Voo's push-up practice carries the full progression ladder —
   // same menu as Terra, cue marks it as the slightly easier exposure.
@@ -165,7 +165,24 @@ function patchProgram() {
     }
   }
 
-  p.specVersion = '1.5';
+  // 1.6: hip abduction joins Voo — the week's only frontal-plane hip
+  // work (Terra owns extension). Solo after the Pallof, machine stack
+  // and reps on the chip.
+  if (v < 1.6) {
+    const voo = p.days.find((d) => d.id === 'voo');
+    if (voo && !voo.slots.some((s) => slug(s.name) === 'hip-abduction-machine')) {
+      const slot = {
+        id: 'v8', name: 'Hip abduction (machine)', target: '3×12–15',
+        track: true, reps: true, rest: 'normal',
+        cue: 'Slow push apart, pause wide, resist the ride back',
+      };
+      let i = voo.slots.findIndex((s) => slug(s.name) === 'pallof-press');
+      if (i === -1) i = voo.slots.findIndex((s) => slug(s.name) === 'push-up-practice') - 1;
+      voo.slots.splice(i >= 0 ? i + 1 : voo.slots.length, 0, slot);
+    }
+  }
+
+  p.specVersion = '1.6';
   save();
 }
 

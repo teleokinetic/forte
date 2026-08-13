@@ -1,4 +1,4 @@
-// Forte — Carolina's program seed (v1.5)
+// Forte — Carolina's program seed (v1.6)
 // This is only the FIRST-RUN seed. After first launch the program lives in
 // localStorage and is edited in-app; changes here won't overwrite it.
 //
@@ -19,7 +19,7 @@
 // Voo is lighter practice.
 
 const SEED_PROGRAM = {
-  specVersion: '1.5',
+  specVersion: '1.6',
   days: [
     {
       id: 'terra',
@@ -121,6 +121,14 @@ const SEED_PROGRAM = {
           id: 't6', name: 'Pallof press', target: '2×10–12 /side',
           track: true, reps: true, rest: 'normal',
           cue: "Resist rotation, don't create it",
+        },
+        {
+          // Voo carries the week's only frontal-plane hip work — Terra
+          // already owns extension (squat, thrust, carry). Solo like the
+          // Pallof: the trio stays a trio.
+          id: 'v8', name: 'Hip abduction (machine)', target: '3×12–15',
+          track: true, reps: true, rest: 'normal',
+          cue: 'Slow push apart, pause wide, resist the ride back',
         },
         {
           id: 'v5', name: 'Push-up practice', target: '2–3 easy sets',
