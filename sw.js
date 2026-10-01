@@ -1,8 +1,8 @@
 /* Forte — offline shell.
    Bump CACHE when shipping changes so clients pick up the new version. */
 
-const CACHE = 'forte-v1.9.0';
-// Critical shell is all-or-nothing; icons are best-effort so one flaky
+const CACHE = 'forte-v1.10.0';
+// Critical shell is all-or-nothing; fonts and icons are best-effort so one flaky
 // request on gym wifi can't silently sink the whole update.
 const CRITICAL = [
   './',
@@ -13,6 +13,8 @@ const CRITICAL = [
   'manifest.webmanifest',
 ];
 const EXTRAS = [
+  'fonts/barlow-condensed-500.woff2',
+  'fonts/barlow-condensed-600.woff2',
   'icons/icon-180.png',
   'icons/icon-192.png',
   'icons/icon-512.png',
