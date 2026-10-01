@@ -706,7 +706,7 @@ function weekDays() {
   return out;
 }
 
-// The lift that has grown most since her first session, for a highlight.
+// The lift that has grown most since her first session.
 function bestGain() {
   let best = null;
   for (const row of sinceRows()) {
@@ -718,32 +718,34 @@ function bestGain() {
   return best;
 }
 
-// The way into Progresso: a live one-line pulse, not a preview.
-function progressPulse() {
-  const ready = nextSessionItems().filter((i) => i.ready).length;
-  const pu = roadsData().find((r) => r.key === 'pushups');
-  const bits = [];
-  if (ready) bits.push(`${ready} ready to move up`);
-  if (pu && pu.current != null) bits.push(`Push-ups: ${pu.nodes[pu.current].name}`);
-  if (!bits.length) {
-    const n = realSessions().length;
-    bits.push(n ? `${n} session${n === 1 ? '' : 's'} logged` : 'The road to your first full set');
-  }
-  return bits.join(' · ');
-}
-
+// The way into Progresso: a tinted strip, not another card like the days.
+// One headline (what's ready, else her biggest gain), the push-up rung
+// under it, and the push-up road drawn small on the right.
 function progressoRowHTML() {
+  const ready = nextSessionItems().filter((i) => i.ready).length;
+  const gain = bestGain();
+  const pu = roadsData().find((r) => r.key === 'pushups');
+  let main;
+  if (ready) main = `${ready} lift${ready === 1 ? '' : 's'} ready to move up`;
+  else if (gain) main = `${gain.row.name} +${gain.delta} ${state.settings.unit}`;
+  else main = realSessions().length ? 'Every session counts here' : 'The road to your first full set';
+  const sub = pu && pu.current != null ? `Push-ups · ${pu.nodes[pu.current].name}` : '';
+  const road = pu ? `<span class="mini-road">${pu.nodes.map((n, i) =>
+    `<span class="mini-rn ${pu.current != null && i <= pu.current ? 'on' : ''} ${n.goal ? 'goal' : ''}"></span>`).join('')}</span>` : '';
   return `
     <a class="prow" href="#/progresso">
-      <span class="prow-mark">${icon('climb', 2)}</span>
-      <span class="prow-body"><span class="prow-t">Progresso</span><span class="prow-s">${esc(progressPulse())}</span></span>
-      <span class="prow-chev">${icon('chev', 2.2)}</span>
+      <span class="prow-body">
+        <span class="prow-k">Progresso${icon('chev', 2.6)}</span>
+        <span class="prow-main">${esc(main)}</span>
+        ${sub ? `<span class="prow-s">${esc(sub)}</span>` : ''}
+      </span>
+      ${road}
     </a>`;
 }
 
 // A · Up next: one card answers "what am I doing today", the other day
-// waits below as a single row. Two optional extras are being compared:
-// a short Progresso summary, or this week's strip at the foot.
+// waits below as a single row; Progresso follows. Optionally this
+// week's strip sits at the foot (compared in the preview).
 function homeUpNext(extra) {
   const next = suggestedDay();
   const live = !!(state.active && state.active.dayId === next.id);
@@ -770,51 +772,8 @@ function homeUpNext(extra) {
       <span class="upnext-go">${live ? 'Pick up where you left off' : `Start ${esc(next.name)}`}${icon('chev', 2.4)}</span>
     </a>
     ${others ? `<div class="group dayrows">${others}</div>` : ''}
-    ${extra === 'summary' ? progressoSummaryHTML() : progressoRowHTML()}
+    ${progressoRowHTML()}
     ${extra === 'week' ? weekStripHTML(st) : ''}`;
-}
-
-// Progresso with a short summary under it: her biggest gain, where the
-// push-up road stands, and what's ready to move up. Each line opens Progresso.
-function progressoSummaryHTML() {
-  const rows = [];
-  const gain = bestGain();
-  if (gain) {
-    const first = realSessions()[0];
-    rows.push(`
-      <a class="hlrow" href="#/progresso">
-        <span class="hl-body"><span class="hl-k">${esc(gain.row.name)}</span>
-          <span class="hl-v"><b>+${esc(String(gain.delta))}</b> ${esc(state.settings.unit)} <span class="hl-since">since ${esc(fmtDate(first.endedAt))}</span></span></span>
-        ${sparkSVG(gain.row.pts.map((p) => p.w))}
-      </a>`);
-  }
-  const pu = roadsData().find((r) => r.key === 'pushups');
-  if (pu && pu.current != null) {
-    const dots = pu.nodes.map((n, i) => `<span class="mini-rn ${i <= pu.current ? 'on' : ''} ${n.goal ? 'goal' : ''}"></span>`).join('');
-    rows.push(`
-      <a class="hlrow" href="#/progresso">
-        <span class="hl-body"><span class="hl-k">Push-ups</span><span class="hl-v">${esc(pu.nodes[pu.current].name)}</span></span>
-        <span class="mini-road">${dots}</span>
-      </a>`);
-  }
-  const ready = nextSessionItems().filter((i) => i.ready);
-  if (ready.length) {
-    rows.push(`
-      <a class="hlrow" href="#/progresso">
-        <span class="hl-body"><span class="hl-k">Ready to move up</span>
-          <span class="hl-v">${esc(ready.map((i) => niceName(i.slot)).join(', '))}</span></span>
-      </a>`);
-  }
-  if (!rows.length) return progressoRowHTML();
-  return `
-    <div class="group psum">
-      <a class="psum-head" href="#/progresso">
-        <span class="prow-mark">${icon('climb', 2)}</span>
-        <span class="prow-t">Progresso</span>
-        <span class="prow-chev">${icon('chev', 2.2)}</span>
-      </a>
-      ${rows.join('')}
-    </div>`;
 }
 
 // This week as seven days, each trained day marked with that day's glyph.
@@ -827,14 +786,13 @@ function weekStripHTML(st) {
       <span class="wk-l">${esc(d.letter)}</span><span class="wk-n">${d.num}</span>${mark}</div>`;
   }).join('');
   return `
-    <div class="sechead">This week</div>
     <div class="card weekcard">
       <div class="wk-row">${days}</div>
       <div class="wk-line">${esc(weekLine(st))}</div>
     </div>`;
 }
 
-const HOME_OPTIONS = [['a', 'A'], ['a-sum', 'A + summary'], ['a-week', 'A + week']];
+const HOME_OPTIONS = [['a', 'A'], ['a-week', 'A + week']];
 
 function homeVariant() {
   if (!window.FORTE_PREVIEW) return 'a';
@@ -845,7 +803,7 @@ function homeVariant() {
 
 function viewHome() {
   const v = homeVariant();
-  const body = homeUpNext(v === 'a-sum' ? 'summary' : v === 'a-week' ? 'week' : '');
+  const body = homeUpNext(v === 'a-week' ? 'week' : '');
   // Preview only: switch between the options and replay the greeting.
   const pv = window.FORTE_PREVIEW ? `
     <div class="pvbar">
@@ -1571,19 +1529,6 @@ function sinceRowHTML(row) {
       ${historySVG(row.pts)}
       <div class="tline">${esc(bestTxt)}${row.pts.some((p) => p.r) ? ' · <span class="dim">reps under each point</span>' : ''}</div>
     </div>`;
-}
-
-// A small trend line for a highlight row.
-function sparkSVG(vals) {
-  const v = vals.slice(-10);
-  const W = 72, H = 28, p = 3;
-  const min = Math.min(...v), max = Math.max(...v);
-  const x = (i) => v.length === 1 ? W / 2 : p + (i * (W - 2 * p)) / (v.length - 1);
-  const y = (n) => max === min ? H / 2 : H - p - ((n - min) * (H - 2 * p)) / (max - min);
-  const pts = v.map((n, i) => `${x(i).toFixed(1)},${y(n).toFixed(1)}`).join(' ');
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true">
-    <polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="${x(v.length - 1).toFixed(1)}" cy="${y(v[v.length - 1]).toFixed(1)}" r="3" fill="currentColor"/></svg>`;
 }
 
 // Next session at a glance: one line per action, the lifts it applies to,

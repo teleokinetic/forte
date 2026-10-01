@@ -140,14 +140,14 @@ input:focus-visible, textarea:focus-visible { outline: none; }
 .ico { width: 20px; height: 20px; flex: none; }
 
 /* Press feedback: everything tappable gives a little under the thumb. */
-.upnext, .dayrow, .hlrow, .prow, .restbtn, .rest-mini, .rest-done, .ring, .rung, .val,
+.upnext, .dayrow, .prow, .restbtn, .rest-mini, .rest-done, .ring, .rung, .val,
 .step, .finishbtn, .seg, .setbtn, .progrow, .mrow, .road, .gear, .backlink,
 .switch, .grow-link, .slot-main {
   transition: transform 0.16s var(--ease), opacity 0.16s var(--ease),
               background-color 0.16s var(--ease), color 0.16s var(--ease);
 }
 .upnext:active, .prow:active, .finishbtn:active, .road:active { transform: scale(0.982); }
-.dayrow:active, .hlrow:active { background: var(--fill); }
+.dayrow:active { background: var(--fill); }
 .restbtn:active, .rest-done:active, .rung:active, .seg:active, .setbtn:active { transform: scale(0.96); }
 .step:active, .rest-mini:active, .gear:active { transform: scale(0.92); background: var(--fill-2); }
 .ring:active { transform: scale(0.88); }
@@ -276,37 +276,8 @@ input:focus-visible, textarea:focus-visible { outline: none; }
 .dr-when { color: var(--dim); font-size: 13.5px; white-space: nowrap; }
 .dayrow > .ico { width: 16px; height: 16px; color: var(--faint); }
 
-/* Progresso with a short summary under it */
-.psum { margin-top: 12px; }
-.psum-head { display: flex; align-items: center; gap: 12px; padding: 13px 14px 11px 13px; }
-.psum-head .prow-t { flex: 1; }
-.psum-head + .hlrow::before {
-  content: ''; position: absolute; top: 0; left: 16px; right: 0;
-  border-top: 0.5px solid var(--sep);
-}
-.psum-head:active { opacity: 0.6; }
-.hlrow {
-  display: flex; align-items: center; gap: 12px; min-height: 64px;
-  padding: 11px 14px 11px 16px; position: relative;
-}
-.hlrow + .hlrow::before {
-  content: ''; position: absolute; top: 0; left: 16px; right: 0;
-  border-top: 0.5px solid var(--sep);
-}
-.hl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.hl-k { font-size: 14px; color: var(--dim); font-weight: 500; }
-.hl-v { font-size: 16.5px; font-weight: 600; letter-spacing: -0.01em; }
-.hl-v b { font-family: var(--num); font-size: 22px; font-weight: 600; color: var(--rose-ink); }
-.hl-since { color: var(--dim); font-weight: 400; font-size: 14.5px; }
-.hlrow > .ico { width: 16px; height: 16px; color: var(--faint); }
-.spark { width: 72px; height: 28px; flex: none; color: var(--rose); }
-.mini-road { display: flex; gap: 5px; align-items: center; flex: none; }
-.mini-rn { width: 8px; height: 8px; border-radius: 50%; background: var(--fill-2); }
-.mini-rn.on { background: var(--rose); }
-.mini-rn.goal { background: transparent; box-shadow: inset 0 0 0 1.6px var(--rose); width: 10px; height: 10px; }
-
 /* This week: seven days, a mark on each day she trained */
-.weekcard { padding: 10px 8px 12px; }
+.weekcard { padding: 8px 8px 11px; margin-top: 12px; }
 .wk-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
 .wk-day { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 7px; border-radius: 12px; }
 .wk-l { font-size: 12px; font-weight: 600; color: var(--dim); }
@@ -368,23 +339,27 @@ body.settle-in #app > :nth-child(4) { animation-delay: 0.14s; }
 body.settle-in #app > :nth-child(5) { animation-delay: 0.2s; }
 body.settle-in #app > :nth-child(n+6) { animation-delay: 0.26s; }
 
+/* Progresso: a tinted strip, so it never reads as a third day. */
 .prow {
-  display: flex; align-items: center; gap: 12px;
-  background: var(--surface); box-shadow: var(--card-shadow);
-  border-radius: var(--r-card); padding: 13px 14px 13px 13px; margin-top: 12px;
-}
-.prow-mark {
-  width: 40px; height: 40px; flex: none; display: grid; place-items: center;
-  background: var(--rose-wash); border-radius: 12px; color: var(--rose);
+  display: flex; align-items: center; gap: 14px;
+  background: var(--rose-wash); border-radius: var(--r-card);
+  padding: 12px 16px 13px; margin-top: 16px;
 }
 .prow-body { min-width: 0; flex: 1; display: flex; flex-direction: column; }
-.prow-t { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.prow-k {
+  display: inline-flex; align-items: center; gap: 1px;
+  font-size: 13.5px; font-weight: 600; color: var(--rose-ink);
+}
+.prow-k .ico { width: 14px; height: 14px; }
+.prow-main { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; margin-top: 2px; }
 .prow-s {
   color: var(--dim); font-size: 14px; margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.prow-chev { color: var(--faint); display: flex; }
-.prow-chev .ico { width: 18px; height: 18px; }
+.mini-road { display: flex; gap: 6px; align-items: center; flex: none; }
+.mini-rn { width: 8px; height: 8px; border-radius: 50%; background: var(--fill-2); }
+.mini-rn.on { background: var(--rose); }
+.mini-rn.goal { background: transparent; box-shadow: inset 0 0 0 1.6px var(--rose); width: 10px; height: 10px; }
 
 /* ---------- day header ---------- */
 
