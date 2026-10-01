@@ -11,7 +11,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 
 let state = null;
 
@@ -364,6 +364,9 @@ function resumeDraft(dayId) {
 
 function activeEntry(dayId, slotId) {
   const a = ensureActive(dayId);
+  // The session exists now, so it can be discarded from this screen.
+  const db = document.querySelector('.discardbtn.off');
+  if (db) db.classList.remove('off');
   if (!a.entries[slotId]) a.entries[slotId] = { weight: null, note: '' };
   a.lastActivityAt = Date.now();
   return a.entries[slotId];
@@ -446,20 +449,15 @@ function finishSession(dayId, note) {
   toast('Session saved');
 }
 
-// Only Finish → Save logs a session. A draft left idle past 12h was never
-// submitted, so it is cleared, never logged on anyone's behalf.
-const STALE_AFTER_MS = 12 * 3600 * 1000;
-function clearStaleDrafts() {
-  const stale = (d) => !!d && Date.now() - (d.lastActivityAt || d.startedAt || 0) > STALE_AFTER_MS;
-  let n = 0;
-  if (stale(state.active)) { state.active = null; n++; }
-  for (const id of Object.keys(state.drafts || {})) {
-    if (stale(state.drafts[id])) { delete state.drafts[id]; n++; }
-  }
-  if (!n) return;
+// Only Finish → Save logs a session, and only Discard drops one. An open
+// session waits, however long, as "In progress" until one of the two.
+function discardSession(dayId) {
+  if (state.active && state.active.dayId === dayId) state.active = null;
+  if (state.drafts) delete state.drafts[dayId];
+  restCancel();
   save();
-  render();
-  toast(n === 1 ? 'Unfinished session cleared' : 'Unfinished sessions cleared');
+  location.hash = '#/';
+  toast('Session discarded');
 }
 
 // Earlier versions logged unfinished sessions automatically (left open 12h,
@@ -474,10 +472,6 @@ function quarantineAutoSessions() {
   save();
 }
 
-// An installed PWA resumes for days without a fresh boot — run the stale
-// check whenever the app comes back, not just at launch.
-document.addEventListener('visibilitychange', () => { if (!document.hidden) clearStaleDrafts(); });
-window.addEventListener('pageshow', (e) => { if (e.persisted) clearStaleDrafts(); });
 
 /* ====================== rest engine (silent) ======================
    No audio: media playback would take the iOS audio session and cut off
@@ -1206,7 +1200,8 @@ function viewDay(dayId) {
       <div id="restdock" class="restdock">${restDockHTML(day.id)}</div>
     </div>
     <div class="slots">${slotsHTML(day)}</div>
-    <button class="finishbtn ${allDone ? 'ready' : ''}" data-action="finish" data-day="${day.id}">Finish session</button>`;
+    <button class="finishbtn ${allDone ? 'ready' : ''}" data-action="finish" data-day="${day.id}">Finish session</button>
+    <button class="discardbtn ${a ? '' : 'off'}" data-action="discard" data-day="${day.id}">Discard session</button>`;
 }
 
 // Five petals fly off a ring the moment its exercise is done.
@@ -1266,6 +1261,7 @@ function viewFinish(dayId) {
       ${recap}
       <textarea id="finishnote" rows="3" placeholder="Session note (optional)"></textarea>
       <button class="finishbtn solid" data-action="finish-save" data-day="${day.id}">Save session</button>
+      <button class="discardbtn ${a ? '' : 'off'}" data-action="discard" data-day="${day.id}">Discard session</button>
     </div>`;
 }
 
@@ -1757,6 +1753,7 @@ window.addEventListener('hashchange', render);
 /* ============================== actions ============================== */
 
 let pendingErase = false;
+let pendingDiscard = false;
 
 function currentDayId() {
   const m = (location.hash || '').match(/^#\/day\/([^/]+)/);
@@ -1929,6 +1926,21 @@ document.addEventListener('click', (ev) => {
   }
 
   if (action === 'finish') { location.hash = '#/finish/' + t.getAttribute('data-day'); return; }
+  if (action === 'discard') {
+    if (!pendingDiscard) {
+      pendingDiscard = true;
+      t.textContent = 'Tap again to discard';
+      t.classList.add('armed');
+      setTimeout(() => {
+        pendingDiscard = false;
+        if (document.body.contains(t)) { t.textContent = 'Discard session'; t.classList.remove('armed'); }
+      }, 3500);
+      return;
+    }
+    pendingDiscard = false;
+    discardSession(t.getAttribute('data-day'));
+    return;
+  }
   if (action === 'finish-save') {
     finishSession(t.getAttribute('data-day'), ($('#finishnote') || {}).value || '');
     return;
@@ -2152,7 +2164,6 @@ load();
 patchProgram();
 quarantineAutoSessions();
 applyTheme();
-clearStaleDrafts();
 render();
 // The greeting plays as its own screen once per launch, from home only.
 if ((location.hash || '#/') === '#/') showSplash();

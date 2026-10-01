@@ -667,6 +667,12 @@ body::before {
 .finishbtn.solid { margin-top: 4px; }
 .finish-wrap { display: grid; gap: 12px; }
 .finish-hint { color: var(--dim); font-size: 15px; margin: 4px 4px 0; }
+.discardbtn {
+  display: block; margin: 10px auto 0; padding: 12px 18px;
+  background: none; border: 0; color: var(--dim); font: inherit; font-size: 15px;
+}
+.discardbtn.off { display: none; }
+.discardbtn.armed { color: var(--danger); font-weight: 600; }
 
 .finish-hero { text-align: center; padding: 6px 0 4px; }
 .bloomwrap { position: relative; width: 116px; height: 116px; margin: 0 auto 6px; }
