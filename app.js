@@ -11,7 +11,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 
 let state = null;
 
@@ -329,17 +329,37 @@ const PUSHUP_IDS = ['push-up-progression', 'push-up-practice'];
 
 /* ============================ session core ============================ */
 
-// A session begins lazily: the first weight tweak or note creates it. Finishing
-// records every tracked slot at its effective (prefilled or adjusted) weight.
-// An unfinished session left on the other day is banked, never discarded.
+// A session begins lazily: the first weight tweak or note creates it, and only
+// Finish → Save puts it in the log. Opening another day parks this draft
+// instead of logging it; it comes back when that day is opened again.
 function ensureActive(dayId) {
   if (state.active && state.active.dayId === dayId) return state.active;
-  if (state.active) {
-    recordSession(state.active.dayId, '(auto-saved — session left open)', true);
-    toast('Previous session auto-saved');
-  }
-  state.active = { dayId, startedAt: Date.now(), lastActivityAt: Date.now(), entries: {} };
+  parkActive();
+  state.active = takeDraft(dayId) || { dayId, startedAt: Date.now(), lastActivityAt: Date.now(), entries: {} };
   return state.active;
+}
+
+function parkActive() {
+  if (!state.active) return;
+  if (!state.drafts) state.drafts = {};
+  state.drafts[state.active.dayId] = state.active;
+  state.active = null;
+}
+
+function takeDraft(dayId) {
+  const d = state.drafts && state.drafts[dayId];
+  if (d) delete state.drafts[dayId];
+  return d || null;
+}
+
+// Opening a day (or its finish screen) with a parked draft makes it the
+// open session again, so its weights and rings show as they were left.
+function resumeDraft(dayId) {
+  if (state.active && state.active.dayId === dayId) return;
+  if (!(state.drafts && state.drafts[dayId]) || !findDay(dayId)) return;
+  parkActive();
+  state.active = takeDraft(dayId);
+  save();
 }
 
 function activeEntry(dayId, slotId) {
@@ -426,25 +446,38 @@ function finishSession(dayId, note) {
   toast('Session saved');
 }
 
-// A session left hanging past 12h is finished, not lost: adjusted weights and
-// notes are real data, and "forgot to hit finish" is the common failure.
+// Only Finish → Save logs a session. A draft left idle past 12h was never
+// submitted, so it is cleared, never logged on anyone's behalf.
 const STALE_AFTER_MS = 12 * 3600 * 1000;
-function autoFinishStale() {
-  const a = state.active;
-  if (!a) return;
-  const last = a.lastActivityAt || a.startedAt;
-  if (Date.now() - last > STALE_AFTER_MS) {
-    recordSession(a.dayId, '(auto-saved — session left open)', true);
-    save();
-    render();
-    toast('Previous session auto-saved');
+function clearStaleDrafts() {
+  const stale = (d) => !!d && Date.now() - (d.lastActivityAt || d.startedAt || 0) > STALE_AFTER_MS;
+  let n = 0;
+  if (stale(state.active)) { state.active = null; n++; }
+  for (const id of Object.keys(state.drafts || {})) {
+    if (stale(state.drafts[id])) { delete state.drafts[id]; n++; }
   }
+  if (!n) return;
+  save();
+  render();
+  toast(n === 1 ? 'Unfinished session cleared' : 'Unfinished sessions cleared');
+}
+
+// Earlier versions logged unfinished sessions automatically (left open 12h,
+// or replaced by opening the other day). Those were never submitted, so they
+// leave the log for `unsubmitted`: kept in exports, counted nowhere.
+function quarantineAutoSessions() {
+  const isAuto = (x) => x.auto === true || x.note === '(auto-saved — session left open)';
+  const auto = state.sessions.filter(isAuto);
+  if (!auto.length) return;
+  state.unsubmitted = (state.unsubmitted || []).concat(auto);
+  state.sessions = state.sessions.filter((x) => !isAuto(x));
+  save();
 }
 
 // An installed PWA resumes for days without a fresh boot — run the stale
 // check whenever the app comes back, not just at launch.
-document.addEventListener('visibilitychange', () => { if (!document.hidden) autoFinishStale(); });
-window.addEventListener('pageshow', (e) => { if (e.persisted) autoFinishStale(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) clearStaleDrafts(); });
+window.addEventListener('pageshow', (e) => { if (e.persisted) clearStaleDrafts(); });
 
 /* ====================== rest engine (silent) ======================
    No audio: media playback would take the iOS audio session and cut off
@@ -650,7 +683,7 @@ function typicalMinutes(dayId) {
 // "In progress", "Done today", or how long ago.
 function dayStatusHTML(day) {
   const last = lastSessionFor(day.id);
-  if (state.active && state.active.dayId === day.id) return '<span class="daycard-live">In progress</span>';
+  if ((state.active && state.active.dayId === day.id) || (state.drafts && state.drafts[day.id])) return '<span class="daycard-live">In progress</span>';
   if (last && !last.auto && startOfDay(last.endedAt) === startOfDay(Date.now())) {
     return `<span class="daycard-done">${bloomSVG('bloom-mini')}Done today</span>`;
   }
@@ -1705,6 +1738,7 @@ function viewSlotEdit(dayId, slotId) {
 function render() {
   const hash = location.hash || '#/';
   const parts = hash.replace(/^#\//, '').split('/');
+  if ((parts[0] === 'day' || parts[0] === 'finish') && parts[1]) resumeDraft(parts[1]);
   let html = '';
   if (parts[0] === 'day' && parts[1]) html = viewDay(parts[1]);
   else if (parts[0] === 'finish' && parts[1]) html = viewFinish(parts[1]);
@@ -2116,8 +2150,9 @@ window.addEventListener('load', () => setTimeout(checkForUpdate, 3000));
 
 load();
 patchProgram();
+quarantineAutoSessions();
 applyTheme();
-autoFinishStale();
+clearStaleDrafts();
 render();
 // The greeting plays as its own screen once per launch, from home only.
 if ((location.hash || '#/') === '#/') showSplash();
