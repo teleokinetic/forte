@@ -607,13 +607,13 @@ function bloomSVG(cls) {
    row, then Progresso. Opens with the greeting, which first plays as its
    own brief screen at launch and then settles into place. */
 
-function greetingHTML(extra) {
+function greetingHTML() {
   const now = new Date();
   const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
   return `
     <div class="greet">
       <h1 class="greet-ola">${esc(saudacao())}, Carolina</h1>
-      <div class="greet-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}${extra ? ` · ${esc(extra)}` : ''}</div>
+      <div class="greet-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}</div>
     </div>`;
 }
 
@@ -743,11 +743,13 @@ function progressoRowHTML() {
     </a>`;
 }
 
-// A · Up next: one card answers "what am I doing today", the other day
-// waits below as a single row; Progresso follows. Optionally this
-// week's strip sits at the foot (compared in the preview).
-function homeUpNext(extra) {
+// Home: one card answers "what am I doing today", the other day waits
+// below as a single row, Progresso follows, and this week's strip sits at
+// the foot. Sized to fit one standard iPhone screen.
+function viewHome() {
   const next = suggestedDay();
+  if (!next) return `${topbar()}${greetingHTML()}${progressoRowHTML()}`;
+  if (!next) return `${topbar()}${greetingHTML()}${progressoRowHTML()}`;
   const live = !!(state.active && state.active.dayId === next.id);
   const mins = typicalMinutes(next.id);
   const last = lastRealSessionFor(next.id);
@@ -762,7 +764,8 @@ function homeUpNext(extra) {
     </a>`).join('');
   const st = rhythmStats();
   return `
-    ${greetingHTML(extra === 'week' ? '' : weekLine(st).split(' · ')[0])}
+    ${topbar()}
+    ${greetingHTML()}
     <a class="upnext" href="#/day/${next.id}">
       <span class="upnext-top"><span class="daymark lg">${dayGlyphHTML(next.id)}</span>
         <span class="upnext-k ${live ? 'live' : ''}">${live ? 'In progress' : 'Up next'}</span></span>
@@ -773,7 +776,8 @@ function homeUpNext(extra) {
     </a>
     ${others ? `<div class="group dayrows">${others}</div>` : ''}
     ${progressoRowHTML()}
-    ${extra === 'week' ? weekStripHTML(st) : ''}`;
+    ${weekStripHTML(st)}
+    <div class="fieldmark">${sprigHTML()}</div>`;
 }
 
 // This week as seven days, each trained day marked with that day's glyph.
@@ -790,29 +794,6 @@ function weekStripHTML(st) {
       <div class="wk-row">${days}</div>
       <div class="wk-line">${esc(weekLine(st))}</div>
     </div>`;
-}
-
-const HOME_OPTIONS = [['a', 'A'], ['a-week', 'A + week']];
-
-function homeVariant() {
-  if (!window.FORTE_PREVIEW) return 'a';
-  let v = 'a';
-  try { v = localStorage.getItem('forte-preview-home') || 'a'; } catch (e) {}
-  return HOME_OPTIONS.some(([k]) => k === v) ? v : 'a';
-}
-
-function viewHome() {
-  const v = homeVariant();
-  const body = homeUpNext(v === 'a-week' ? 'week' : '');
-  // Preview only: switch between the options and replay the greeting.
-  const pv = window.FORTE_PREVIEW ? `
-    <div class="pvbar">
-      <span class="pv-k">Home option</span>
-      <div class="segwrap">${HOME_OPTIONS.map(([k, l]) =>
-        `<button class="seg ${v === k ? 'on' : ''}" data-action="pv-home" data-v="${k}">${l}</button>`).join('')}</div>
-      <button class="setbtn" data-action="pv-splash">Replay greeting</button>
-    </div>` : '';
-  return `${topbar()}${body}<div class="fieldmark">${sprigHTML()}</div>${pv}`;
 }
 
 /* ---- greeting splash ----
@@ -1775,12 +1756,6 @@ document.addEventListener('click', (ev) => {
   const action = t.getAttribute('data-action');
   const dayId = currentDayId();
 
-  if (action === 'pv-home') {
-    try { localStorage.setItem('forte-preview-home', t.getAttribute('data-v')); } catch (e) {}
-    render();
-    return;
-  }
-  if (action === 'pv-splash') { window.scrollTo(0, 0); showSplash(); return; }
   if (action === 'rest') { restStart(t.getAttribute('data-tier'), null); return; }
   if (action === 'rest-restart') { restStart(rest.tier || 'normal', rest.label); return; }
   if (action === 'rest-cancel') { restCancel(); return; }
