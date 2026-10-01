@@ -18,5 +18,13 @@ localStorage and is edited in-app (Settings → Program). Ship program changes
 to installed devices as staged patches in `patchProgram()` (app.js), keyed by
 `specVersion`.
 
-No targets ledger yet — a progress view for Carolina is planned but
-deliberately not built.
+**Progresso** (home → the row under the day cards), computed from the log alone:
+*roads* — each ladder (push-ups, Nordics, hollow body) with its goal at the far
+end, plus chin-up assistance shrinking toward zero; position is the highest
+rung ever picked, so Voo's easier practice can't walk a road backwards;
+*next session* — reps-first lifts that hit the top of their range (add weight,
+one pin less, next rung); *since* — every tracked lift from first session to
+now, weight and reps, tap for its history; *rhythm* — sessions per week.
+
+Design: the system font carries words; Barlow Condensed (`fonts/`) is for
+numbers only. One line per exercise; tap a row for its drawer.

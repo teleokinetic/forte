@@ -11,7 +11,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.10.0';
 
 let state = null;
 
@@ -327,55 +327,6 @@ function rungDetail(slot, sel) {
 
 const PUSHUP_IDS = ['push-up-progression', 'push-up-practice'];
 
-// The ladder's rungs come from the program's own push-up menu; the current
-// rung is her latest pick (active session first, then the log).
-function pushupLadder() {
-  let menu = null;
-  for (const id of PUSHUP_IDS) {
-    if (menu) break;
-    for (const day of state.program.days) {
-      const s = day.slots.find((sl) => slug(sl.name) === id && sl.menu && sl.menu.length);
-      if (s) { menu = s.menu; break; }
-    }
-  }
-  const rungs = (menu || []).map(rungShort);
-  let current = null;
-  const pick = latestPushupRung();
-  if (pick) {
-    const i = rungs.indexOf(pick);
-    if (i !== -1) current = i;
-  }
-  return { rungs, current };
-}
-
-function latestPushupRung() {
-  const a = state.active;
-  if (a) {
-    const day = findDay(a.dayId);
-    if (day) {
-      for (const s of day.slots) {
-        const e = a.entries[s.id];
-        if (e && e.rung && PUSHUP_IDS.includes(slug(s.name))) return e.rung;
-      }
-    }
-  }
-  for (let i = state.sessions.length - 1; i >= 0; i--) {
-    const en = (state.sessions[i].entries || []).find((e) => e.rung && PUSHUP_IDS.includes(e.exerciseId));
-    if (en) return en.rung;
-  }
-  return null;
-}
-
-function rungFirstDates() {
-  const map = {};
-  for (const sess of state.sessions) {
-    for (const en of (sess.entries || [])) {
-      if (en.rung && PUSHUP_IDS.includes(en.exerciseId) && !(en.rung in map)) map[en.rung] = sess.endedAt;
-    }
-  }
-  return map;
-}
-
 /* ============================ session core ============================ */
 
 // A session begins lazily: the first weight tweak or note creates it. Finishing
@@ -570,107 +521,328 @@ document.addEventListener('visibilitychange', () => {
 
 /* ============================== views ============================== */
 
-function topbar(backTo, title) {
+// One small stroke-icon set (24-grid, round caps), shared with Strength
+// Rebuild, so every glyph is drawn the same way instead of borrowed from a font.
+const ICON_PATHS = {
+  back: '<path d="M15 5l-7 7 7 7"/>',
+  chev: '<path d="M9 5l7 7-7 7"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  close: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+  again: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/>',
+  note: '<path d="M14.5 5.5l4 4"/><path d="M4.5 19.5l1-4.5L16 4.5a1.4 1.4 0 0 1 2 0l1.5 1.5a1.4 1.4 0 0 1 0 2L9 18.5z"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  dn: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  pair: '<path d="M7 8h13m0 0-3-3m3 3-3 3M17 16H4m0 0 3-3m-3 3 3 3"/>',
+  climb: '<path d="M4 19.5h4.5V15H13v-4.5h4.5V6H20"/><path d="M16.5 3.5L20 6l-2.5 3.5"/>',
+};
+function icon(name, sw) {
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw || 2}"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name]}</svg>`;
+}
+
+function cap(s) { s = String(s); return s.charAt(0).toUpperCase() + s.slice(1); }
+
+function topbar(backTo) {
   const left = backTo
-    ? `<a class="backlink" href="${backTo}">‹ Back</a>`
+    ? `<a class="backlink" href="${backTo}">${icon('back', 2.4)}Back</a>`
     : `<div class="wordmark">Forte</div>`;
-  const right = backTo
-    ? (title ? `<div class="pagetitle">${esc(title)}</div>` : '')
-    : `<a class="gear" href="#/settings" aria-label="Settings">⚙</a>`;
+  const right = backTo ? '' : `<a class="gear" href="#/settings" aria-label="Settings">${icon('gear', 1.8)}</a>`;
   return `<div class="topbar">${left}${right}</div>`;
 }
 
-// Pressed sprig — the one ornament. Absolutely positioned into the empty
-// corner, negative z-index so cards always paint over it.
-function sprigHTML() {
-  return `
-    <svg class="sprig" viewBox="0 0 104 118" aria-hidden="true">
-      <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M96 6 C 78 18 54 38 40 62 C 32 76 27 89 26 102"/>
-        <path d="M60 44 C 54 54 50 62 48 72" stroke-width="1.7"/>
-        <path d="M74 26 c 10 -9 22 -10 30 -4 c -10 9 -22 10 -30 4 z" fill="currentColor" stroke="none" opacity="0.3"/>
-        <path d="M38 66 c -11 -3 -18 -11 -19 -21 c 11 3 18 11 19 21 z" fill="currentColor" stroke="none" opacity="0.3"/>
-        <g transform="translate(38 70) scale(0.8)" stroke-width="1.7">
-          <ellipse cx="12" cy="6.2" rx="3.4" ry="4.8"/>
-          <ellipse cx="12" cy="6.2" rx="3.4" ry="4.8" transform="rotate(72 12 12)"/>
-          <ellipse cx="12" cy="6.2" rx="3.4" ry="4.8" transform="rotate(144 12 12)"/>
-          <ellipse cx="12" cy="6.2" rx="3.4" ry="4.8" transform="rotate(216 12 12)"/>
-          <ellipse cx="12" cy="6.2" rx="3.4" ry="4.8" transform="rotate(288 12 12)"/>
-        </g>
-        <circle cx="26" cy="106" r="2.6" fill="currentColor" stroke="none" opacity="0.55"/>
-      </g>
-    </svg>`;
-}
+/* ---- ornaments ----
+   Drawn once, in one hand: a fine stroke with a soft rosé fill. The day
+   marks sit in a tinted tile; the sprig signs off home and Progresso; the
+   bloom is how finishing looks — an exercise, a dupla, a whole session. */
 
-// Day glyphs in the sprig's hand: Terra sprouts, Voo flies.
+// Terra sprouts from the ground; Voo is two birds in flight.
 function dayGlyphHTML(dayId) {
   if (dayId === 'terra') return `
-    <svg class="dayglyph" viewBox="0 0 44 44" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 36 Q 22 30 38 36"/><path d="M22 34 V 20"/><path d="M22 22 C 20 14 13 11 7 12 C 9 19 15 22 22 22 Z" fill="currentColor" stroke="none" opacity=".35"/><path d="M22 18 C 24 11 30 8 36 9 C 34 16 28 19 22 18 Z" fill="currentColor" stroke="none" opacity=".35"/></g></svg>`;
+    <svg class="dayglyph" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 19.5c2.6-1.3 5.3-2 8-2s5.4.7 8 2"/>
+      <path d="M12 17.5v-6.2"/>
+      <path d="M12 12.6C11 9.3 8.2 7.6 4.8 8c.4 3.3 3.3 5 7.2 4.6z" fill="currentColor" fill-opacity=".2"/>
+      <path d="M12 11.3c.6-3.6 3.4-6 7.2-6-.2 3.7-3 6.1-7.2 6z" fill="currentColor" fill-opacity=".2"/>
+    </g></svg>`;
   if (dayId === 'voo') return `
-    <svg class="dayglyph" viewBox="0 0 44 44" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 26 C 12 18 20 16 27 20 C 24 24 16 27 8 27 Z" fill="currentColor" stroke="none" opacity=".35"/><path d="M26 20 C 31 14 38 12 42 13 C 39 18 33 21 27 21"/><path d="M26 20 C 28 25 28 31 25 36"/><path d="M27 20 L 21 15"/></g></svg>`;
+    <svg class="dayglyph" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.8 12.2c3.2-1.6 6.4-.9 9.2 2.6 2.8-3.5 6-4.2 9.2-2.6"/>
+      <path d="M13.6 6.6c1.5-.7 2.9-.4 4 1 1.1-1.4 2.5-1.7 4-1" stroke-width="1.5"/>
+    </g></svg>`;
   return '';
 }
 
-// The sprig's five-petal flower, opened. Blooms on the finish screen and
-// waits at the top of the push-up ladder.
-function bloomHTML(cls, strokeWidth) {
-  const petal = (rot) => `<ellipse class="petal" cx="44" cy="23" rx="12" ry="17" fill="currentColor" fill-opacity=".16"${rot ? ` transform="rotate(${rot} 44 44)"` : ''}/>`;
+// A rose stem: one bud, two leaves. The quiet sign-off at the foot of a page.
+function sprigHTML() {
   return `
-    <svg class="${cls}" viewBox="0 0 88 88" aria-hidden="true">
-      <g fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round">
-        ${petal(0)}${petal(72)}${petal(144)}${petal(216)}${petal(288)}
-        <circle cx="44" cy="44" r="4.5" fill="currentColor" stroke="none" opacity=".55"/>
-      </g>
+    <svg class="sprig" viewBox="0 0 48 76" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M24 74c-1.2-13 .6-27-.2-46"/>
+      <path d="M23.7 55c-6.8-.4-11.2-5-12.2-11.6 6.4.4 11 5 12.2 11.6z" fill="currentColor" fill-opacity=".18"/>
+      <path d="M24 44.5c6.6-.8 10.8-5.6 11.4-12-6.3.6-10.7 5.4-11.4 12z" fill="currentColor" fill-opacity=".18"/>
+      <path d="M18.4 25.2c-2.6.6-4.6 0-6-1.6M29.6 25.2c2.6.6 4.6 0 6-1.6"/>
+      <path d="M24 28c-5.6-.6-7.8-6.4-6-12.4 1.6 2 3.8 3.1 6 3.1s4.4-1.1 6-3.1c1.8 6-.4 11.8-6 12.4z" fill="currentColor" fill-opacity=".22"/>
+      <path d="M24 18.7c-2.4-3.6-2-8.4 0-11.2 2 2.8 2.4 7.6 0 11.2z" fill="currentColor" fill-opacity=".14"/>
+    </g></svg>`;
+}
+
+// Five petals around a centre. Each petal is its own group so the bloom can
+// open one petal at a time (CSS staggers on --i).
+function bloomSVG(cls) {
+  const petal = 'M50 49C41.5 42.5 40 28 50 16c10 12 8.5 26.5 0 33z';
+  const outer = [0, 1, 2, 3, 4].map((i) =>
+    `<g transform="rotate(${i * 72} 50 50)"><path class="petal" style="--i:${i}" d="${petal}"/></g>`).join('');
+  const inner = [0, 1, 2, 3, 4].map((i) =>
+    `<g transform="rotate(${36 + i * 72} 50 50) translate(50 50) scale(.56) translate(-50 -50)"><path class="petal in" style="--i:${i + 5}" d="${petal}"/></g>`).join('');
+  return `
+    <svg class="${cls}" viewBox="0 0 100 100" aria-hidden="true">
+      <g fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2" stroke-linejoin="round">${outer}${inner}</g>
+      <circle class="bloom-core" cx="50" cy="50" r="5.5" fill="currentColor"/>
     </svg>`;
 }
+
+/* ---- home ----
+   Up next: one decisive card for the day she's on, the other day as a
+   row, then Progresso. Opens with the greeting, which first plays as its
+   own brief screen at launch and then settles into place. */
 
 function greetingHTML() {
   const now = new Date();
   const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
   return `
     <div class="greet">
-      ${sprigHTML()}
-      <div class="greet-ola">${esc(saudacao())}, Carolina</div>
+      <h1 class="greet-ola">${esc(saudacao())}, Carolina</h1>
       <div class="greet-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}</div>
     </div>`;
 }
 
-function viewHome() {
-  const cards = state.program.days.map((day) => {
-    const last = lastSessionFor(day.id);
-    const when = last
-      ? `${fmtDateLong(last.endedAt)} — ${relPhrase(last.endedAt)}`
-      : "First one's waiting";
-    return `
-      <a class="daycard" href="#/day/${day.id}">
-        ${dayGlyphHTML(day.id)}
-        <div class="daycard-name">${esc(day.name)}</div>
-        <div class="daycard-sub">${esc(day.subtitle)}</div>
-        <div class="daycard-last">${esc(when)}</div>
-      </a>`;
-  }).join('');
-  return `${topbar()}${greetingHTML()}<div class="daygrid">${cards}</div>${progressoRowHTML()}`;
+function lastRealSessionFor(dayId) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const s = state.sessions[i];
+    if (s.dayId === dayId && !s.auto) return s;
+  }
+  return null;
 }
 
+// The day she's on: an open session wins; otherwise the day trained least
+// recently (never-trained first), so Terra and Voo alternate on their own.
+function suggestedDay() {
+  if (state.active && findDay(state.active.dayId)) return findDay(state.active.dayId);
+  let best = null;
+  let bestT = Infinity;
+  for (const day of state.program.days) {
+    const last = lastRealSessionFor(day.id);
+    const t = last ? last.endedAt : -Infinity;
+    if (t < bestT) { best = day; bestT = t; }
+  }
+  return best;
+}
+
+// A day's usual length, from her last few finished sessions, to 5 minutes.
+function typicalMinutes(dayId) {
+  const mins = realSessions().filter((s) => s.dayId === dayId).slice(-6)
+    .map((s) => (s.endedAt - s.startedAt) / 60000).filter((m) => m >= 10 && m <= 180);
+  if (!mins.length) return null;
+  return Math.round(mins.reduce((a, b) => a + b, 0) / mins.length / 5) * 5;
+}
+
+// "In progress", "Done today", or how long ago.
+function dayStatusHTML(day) {
+  const last = lastSessionFor(day.id);
+  if (state.active && state.active.dayId === day.id) return '<span class="daycard-live">In progress</span>';
+  if (last && !last.auto && startOfDay(last.endedAt) === startOfDay(Date.now())) {
+    return `<span class="daycard-done">${bloomSVG('bloom-mini')}Done today</span>`;
+  }
+  return `<span>${last ? esc(cap(relPhrase(last.endedAt))) : 'Not yet'}</span>`;
+}
+
+// Weeks, Monday first: sessions per week and the two-a-week streak.
+function rhythmStats() {
+  const real = realSessions();
+  if (!real.length) return null;
+  const firstW = weekStart(real[0].endedAt);
+  const nowW = weekStart(Date.now());
+  const weeks = [];
+  const d = new Date(nowW);
+  while (weeks.length < 6 && d.getTime() >= firstW) {
+    const ws = d.getTime();
+    weeks.unshift({ start: ws, count: real.filter((s) => weekStart(s.endedAt) === ws).length });
+    d.setDate(d.getDate() - 7);
+  }
+  let streak = 0;
+  for (let i = weeks.length - 1; i >= 0; i--) {
+    if (weeks[i].start === nowW) { if (weeks[i].count >= 2) streak++; continue; }
+    if (weeks[i].count >= 2) streak++; else break;
+  }
+  const thisWeek = weeks.length && weeks[weeks.length - 1].start === nowW ? weeks[weeks.length - 1].count : 0;
+  return { weeks, streak, thisWeek, nowW };
+}
+
+function weekLine(st) {
+  if (!st) return 'Two a week is the rhythm';
+  const run = st.streak >= 2 ? ` · ${st.streak} weeks running` : '';
+  if (st.thisWeek >= 2) return `Two this week${run}`;
+  return `${st.thisWeek} of 2 this week${run}`;
+}
+
+// This week's seven days: what she trained on each, and which is today.
+function weekDays() {
+  const ws = weekStart(Date.now());
+  const today = startOfDay(Date.now());
+  const real = realSessions();
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(ws);
+    d.setDate(d.getDate() + i);
+    const t = startOfDay(d.getTime());
+    out.push({
+      t, num: d.getDate(),
+      letter: d.toLocaleDateString(undefined, { weekday: 'narrow' }),
+      days: real.filter((s) => startOfDay(s.endedAt) === t).map((s) => s.dayId),
+      today: t === today, future: t > today,
+    });
+  }
+  return out;
+}
+
+// The lift that has grown most since her first session.
+function bestGain() {
+  let best = null;
+  for (const row of sinceRows()) {
+    if (row.assisted || row.pts.length < 2) continue;
+    const a = row.pts[0].w, b = row.pts[row.pts.length - 1].w;
+    const pct = a > 0 ? (b - a) / a : 0;
+    if (b > a && (!best || pct > best.pct)) best = { row, pct, delta: +(b - a).toFixed(1) };
+  }
+  return best;
+}
+
+// The way into Progresso: a tinted strip, not another card like the days.
+// One headline (what's ready, else her biggest gain), the push-up rung
+// under it, and the push-up road drawn small on the right.
 function progressoRowHTML() {
-  const n = state.sessions.filter((s) => !s.auto).length;
-  const ladder = pushupLadder();
-  const sub = ladder.current != null
-    ? `Push-up ladder · rung ${ladder.current + 1} of ${ladder.rungs.length + 1} — ${n} session${n === 1 ? '' : 's'}`
-    : n ? `${n} session${n === 1 ? '' : 's'} logged`
-        : 'The road to your first full set';
+  const ready = nextSessionItems().filter((i) => i.ready).length;
+  const gain = bestGain();
+  const pu = roadsData().find((r) => r.key === 'pushups');
+  let main;
+  if (ready) main = `${ready} lift${ready === 1 ? '' : 's'} ready to move up`;
+  else if (gain) main = `${gain.row.name} +${gain.delta} ${state.settings.unit}`;
+  else main = realSessions().length ? 'Every session counts here' : 'The road to your first full set';
+  const sub = pu && pu.current != null ? `Push-ups · ${pu.nodes[pu.current].name}` : '';
+  const road = pu ? `<span class="mini-road">${pu.nodes.map((n, i) =>
+    `<span class="mini-rn ${pu.current != null && i <= pu.current ? 'on' : ''} ${n.goal ? 'goal' : ''}"></span>`).join('')}</span>` : '';
   return `
-    <a class="progresso" href="#/progresso">
-      <div class="progresso-mark">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 20 L 12 4"/><path d="M13 20 L 20 4"/><path d="M7 15 H 16"/><path d="M9 9 H 18"/></g></svg>
-      </div>
-      <div>
-        <div class="progresso-t">Progresso</div>
-        <div class="progresso-s">${esc(sub)}</div>
-      </div>
-      <div class="progresso-chev">›</div>
+    <a class="prow" href="#/progresso">
+      <span class="prow-body">
+        <span class="prow-k">Progresso${icon('chev', 2.6)}</span>
+        <span class="prow-main">${esc(main)}</span>
+        ${sub ? `<span class="prow-s">${esc(sub)}</span>` : ''}
+      </span>
+      ${road}
     </a>`;
 }
+
+// Home: one card answers "what am I doing today", the other day waits
+// below as a single row, Progresso follows, and this week's strip sits at
+// the foot. Sized to fit one standard iPhone screen.
+function viewHome() {
+  const next = suggestedDay();
+  if (!next) return `${topbar()}${greetingHTML()}${progressoRowHTML()}`;
+  if (!next) return `${topbar()}${greetingHTML()}${progressoRowHTML()}`;
+  const live = !!(state.active && state.active.dayId === next.id);
+  const mins = typicalMinutes(next.id);
+  const last = lastRealSessionFor(next.id);
+  const meta = [`${next.slots.length} exercises`];
+  if (mins) meta.push(`about ${mins} min`);
+  if (!live && last) meta.push(`last ${relPhrase(last.endedAt)}`);
+  const others = state.program.days.filter((d) => d.id !== next.id).map((d) => `
+    <a class="dayrow" href="#/day/${d.id}">
+      <span class="daymark">${dayGlyphHTML(d.id)}</span>
+      <span class="dr-body"><span class="dr-name">${esc(d.name)}</span><span class="dr-sub">${esc(d.subtitle)}</span></span>
+      <span class="dr-when">${dayStatusHTML(d)}</span>${icon('chev', 2.2)}
+    </a>`).join('');
+  const st = rhythmStats();
+  return `
+    ${topbar()}
+    ${greetingHTML()}
+    <a class="upnext" href="#/day/${next.id}">
+      <span class="upnext-top"><span class="daymark lg">${dayGlyphHTML(next.id)}</span>
+        <span class="upnext-k ${live ? 'live' : ''}">${live ? 'In progress' : 'Up next'}</span></span>
+      <span class="upnext-name">${esc(next.name)}</span>
+      <span class="upnext-sub">${esc(next.subtitle)}</span>
+      <span class="upnext-meta">${esc(meta.join(' · '))}</span>
+      <span class="upnext-go">${live ? 'Pick up where you left off' : `Start ${esc(next.name)}`}${icon('chev', 2.4)}</span>
+    </a>
+    ${others ? `<div class="group dayrows">${others}</div>` : ''}
+    ${progressoRowHTML()}
+    ${weekStripHTML(st)}
+    <div class="fieldmark">${sprigHTML()}</div>`;
+}
+
+// This week as seven days, each trained day marked with that day's glyph.
+function weekStripHTML(st) {
+  const days = weekDays().map((d) => {
+    const mark = d.days.length
+      ? `<span class="wk-mark">${dayGlyphHTML(d.days[d.days.length - 1])}</span>`
+      : '<span class="wk-mark empty"></span>';
+    return `<div class="wk-day ${d.today ? 'today' : ''} ${d.future ? 'future' : ''}">
+      <span class="wk-l">${esc(d.letter)}</span><span class="wk-n">${d.num}</span>${mark}</div>`;
+  }).join('');
+  return `
+    <div class="card weekcard">
+      <div class="wk-row">${days}</div>
+      <div class="wk-line">${esc(weekLine(st))}</div>
+    </div>`;
+}
+
+/* ---- greeting splash ----
+   At launch the greeting gets the whole screen for a moment: the sprig
+   draws itself, the words rise, then the words glide up into the home
+   greeting and the page settles in under them. Tap to skip. */
+
+let splashTimer = null;
+function showSplash() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const target = $('.greet-ola');
+  if (!target) return;
+  const old = $('.splash');
+  if (old) old.remove();
+  const now = new Date();
+  const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
+  const el = document.createElement('div');
+  el.className = 'splash';
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = `
+    <div class="splash-inner">
+      ${sprigHTML().replace(/<path /g, '<path pathLength="1" ')}
+      <div class="splash-ola">${esc(saudacao())}, Carolina</div>
+      <div class="splash-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}</div>
+    </div>`;
+  document.body.appendChild(el);
+  document.body.classList.add('splashing');
+  let settled = false;
+  const settle = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(splashTimer);
+    const words = el.querySelector('.splash-ola');
+    const from = words.getBoundingClientRect();
+    const to = target.getBoundingClientRect();
+    words.style.transform = `translate(${(to.left - from.left).toFixed(1)}px, ${(to.top - from.top).toFixed(1)}px)`;
+    el.classList.add('settling');
+    document.body.classList.remove('splashing');
+    document.body.classList.add('settle-in');
+    setTimeout(() => {
+      el.remove();
+      document.body.classList.remove('settle-in');
+    }, 760);
+  };
+  el.addEventListener('click', settle);
+  splashTimer = setTimeout(settle, 1900);
+}
+
+/* ---- workout ---- */
 
 function rungsHTML(slot, entry) {
   const sel = entry && entry.rung ? entry.rung : '';
@@ -686,8 +858,6 @@ function rungsHTML(slot, entry) {
     <div class="rung-detail ${detail ? '' : 'hidden'}" data-rungdetail="${slot.id}">${esc(detail)}</div>`;
 }
 
-/* ---- counting ring ---- */
-
 // Sets-per-exercise reads straight off the target string ("4×8–12" → 4,
 // "2–3 easy sets" → 3), so her installed program needs no migration and
 // in-app edits keep working. A "sets" range counts to its top — the ring
@@ -701,141 +871,141 @@ function setTarget(slot) {
   return n >= 2 && n <= 12 ? n : 0;
 }
 
-const NUMWORD = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
-  'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
-
-// The rest pill talks like Forte, not a logbook. The last set's rest is
-// just rest — the checked card already says what happened.
+// Plain rest captions: the ring already says what happened.
 function restLabelFor(n, total) {
-  if (n >= total) return `All ${NUMWORD[total] || total} in — savor this rest`;
-  if (n === total - 1) return 'One left — make it a pretty one';
-  if (n === 1) return "First one's in — shake it out";
-  const w = String(NUMWORD[n] || n);
-  return w.charAt(0).toUpperCase() + w.slice(1) + ` down, ${NUMWORD[total - n] || total - n} to go — breathe easy`;
+  return `Set ${n} of ${total}`;
 }
 
-const RING_CIRC = 2 * Math.PI * 14;
+const RING_CIRC = 2 * Math.PI * 12;
 
+// The ring: 28px visual, an invisible inset takes the hit area to ~50pt.
 function ringHTML(slot, e) {
   const done = !!(e && e.done);
   const total = setTarget(slot);
   if (!total) {
-    return `<button class="ring" data-action="done" data-slot="${slot.id}"
+    return `<button class="ring ${done ? 'on' : ''}" data-action="done" data-slot="${slot.id}"
       aria-label="Mark done" aria-pressed="${done}"></button>`;
   }
   const n = done ? total : Math.min((e && e.sets) || 0, total - 1);
   const off = RING_CIRC * (1 - n / total);
   return `
-    <button class="ring counting ${done ? 'full' : ''}" data-action="done" data-slot="${slot.id}"
-      aria-label="${done ? 'Reset sets' : 'Count one set'}" aria-pressed="${done}">
-      <svg viewBox="0 0 36 36" aria-hidden="true">
-        <circle class="ring-track" cx="18" cy="18" r="14"></circle>
-        <circle class="ring-arc" cx="18" cy="18" r="14"
+    <button class="ring counting ${done ? 'on' : ''}" data-action="done" data-slot="${slot.id}"
+      aria-label="${done ? 'Reset sets' : `Count one set (${n} of ${total})`}" aria-pressed="${done}">
+      <svg viewBox="0 0 28 28" aria-hidden="true">
+        <circle class="ring-track" cx="14" cy="14" r="12"></circle>
+        <circle class="ring-arc" cx="14" cy="14" r="12"
           style="stroke-dasharray:${RING_CIRC.toFixed(2)};stroke-dashoffset:${off.toFixed(2)}"></circle>
       </svg>
-      <span class="ring-count">${done ? '✓' : (n || '')}</span>
+      <span class="ring-count">${done ? icon('check', 3.2) : (n || '')}</span>
     </button>`;
 }
 
-// "Set 2 of 4 down" under the cue — hidden until the first tap so resting
-// cards stay quiet (the target already says the plan).
-function setlineHTML(slot, e) {
-  const total = setTarget(slot);
-  if (!total) return '';
-  const n = (e && e.done) ? total : Math.min((e && e.sets) || 0, total - 1);
-  return `<div class="setline ${n ? '' : 'hidden'}" data-setline="${slot.id}">Set ${n} of ${total} down</div>`;
+function slotEntry(dayId, slot) {
+  const a = state.active;
+  return a && a.dayId === dayId ? a.entries[slot.id] || null : null;
 }
 
+// Last time's rung, shown as a reference only — never saved unless picked.
+function lastRungFor(exerciseId) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const en = (state.sessions[i].entries || []).find((e) => e.exerciseId === exerciseId && e.rung);
+    if (en) return en.rung;
+  }
+  return '';
+}
+
+// Under the name: the target, then today's rung (or last time's, dimmer).
+function subHTML(dayId, slot) {
+  const e = slotEntry(dayId, slot);
+  let rung = '';
+  if (slot.menu && slot.menu.length) {
+    if (e && e.rung) rung = `<span class="sub-r now">${esc(e.rung)}</span>`;
+    else {
+      const last = lastRungFor(slug(slot.name));
+      if (last) rung = `<span class="sub-r">Last: ${esc(last)}</span>`;
+    }
+  }
+  const t = slot.target ? `<span class="sub-t">${esc(slot.target)}</span>` : '';
+  return t + (t && rung ? '<span class="sub-dot"> · </span>' : '') + rung;
+}
+
+// Today's number, right-aligned: weight (and reps), or reps alone on push-ups.
+function valHTML(dayId, slot) {
+  if (slot.track) {
+    const w = effectiveWeight(dayId, slot);
+    const r = slot.reps ? effectiveReps(dayId, slot) : null;
+    const hasR = !(r === '' || r == null);
+    if (w === '' || w == null) {
+      return `<span class="val-add">Add</span>${hasR ? `<span class="val-reps">×${esc(String(r))}</span>` : ''}`;
+    }
+    return `<span class="val-num">${esc((slot.added ? '+' : '') + w)}</span><span class="val-unit">${esc(state.settings.unit)}</span>${
+      slot.reps ? `<span class="val-reps">×${hasR ? esc(String(r)) : '—'}</span>` : ''}`;
+  }
+  if (slot.reps) {
+    const r = effectiveReps(dayId, slot);
+    return r === '' || r == null ? '<span class="val-add">Reps</span>' : `<span class="val-num">×${esc(String(r))}</span>`;
+  }
+  return '';
+}
+
+function refreshRow(dayId, slot) {
+  const card = $(`[data-slotcard="${slot.id}"]`);
+  if (!card) return;
+  const v = card.querySelector('.val');
+  if (v) v.innerHTML = valHTML(dayId, slot);
+  const s = card.querySelector('.slot-sub');
+  if (s) s.innerHTML = subHTML(dayId, slot);
+}
+
+function stepRow(tag, kind, slot, d, value, mode) {
+  return `
+    <div class="edit-row"><span class="edit-tag">${esc(tag)}</span>
+      <button class="step" data-action="${kind === 'weight' ? 'step' : 'rstep'}" data-slot="${slot.id}" data-d="-${d}" aria-label="Minus ${d}">−${d}</button>
+      <input class="chip-input" type="number" inputmode="${mode}" ${kind === 'weight' ? 'step="any"' : ''}
+        data-action="${kind}" data-slot="${slot.id}" value="${value === '' || value == null ? '' : esc(String(value))}" aria-label="${esc(tag)}">
+      <button class="step" data-action="${kind === 'weight' ? 'step' : 'rstep'}" data-slot="${slot.id}" data-d="${d}" aria-label="Plus ${d}">+${d}</button>
+    </div>`;
+}
+
+// One line per exercise: ring · name over target · today's number. Tapping
+// the row opens its drawer (cue, ladder, steppers, note); one at a time.
 function slotCardHTML(day, slot, onMat) {
-  const a = state.active && state.active.dayId === day.id ? state.active.entries[slot.id] : null;
+  const a = slotEntry(day.id, slot);
   const note = a && a.note ? a.note : '';
   const done = !!(a && a.done);
-  const menu = slot.menu && slot.menu.length ? rungsHTML(slot, a) : '';
-  // On a mat the tag above already says who's paired; the per-card note
-  // is only for pair members that sit apart in the list.
   const partners = onMat ? [] : pairPartners(day, slot);
   const pairNote = partners.length
-    ? `<div class="pair-note">Pair with ${esc(pairNames(day, slot))} — ${partners.length > 1 ? 'cycle through' : 'alternate sets'}</div>`
+    ? `<div class="pair-note">${icon('pair', 2.4)}With ${esc(pairNames(day, slot))} — ${partners.length > 1 ? 'cycle through' : 'alternate sets'}</div>`
     : '';
   const warmup = slot.warmup
     ? `<div class="warmup"><span class="warmup-tag">Warm-up</span> ${esc(slot.warmup)}</div>` : '';
-  let chip = '', chipEdit = '';
-  if (slot.track) {
-    const w = effectiveWeight(day.id, slot);
-    // Empty chip invites instead of showing "— lb ×—" dashes; the numeric
-    // spans stay in the DOM so live updates work before the next render.
-    const empty = w === '' || w == null;
-    const label = empty ? '—' : (slot.added ? '+' : '') + w;
-    const r = slot.reps ? effectiveReps(day.id, slot) : null;
-    const repsChip = slot.reps
-      ? `<span class="chip-reps">×${r === '' || r == null ? '—' : esc(String(r))}</span>` : '';
-    chip = `
-      <button class="chip ${empty ? 'empty' : ''}" data-action="chip" data-slot="${slot.id}">
-        <span class="chip-add">add weight</span>
-        <span class="chip-num">${esc(String(label))}</span>
-        <span class="chip-unit">${esc(state.settings.unit)}</span>
-        ${repsChip}
-        <span class="chip-caret">▾</span>
-      </button>`;
-    // Full-width row(s) below the footer — inside the flex footer this
-    // forces the whole page past the viewport when revealed.
-    const weightRow = `
-        <button class="step" data-action="step" data-slot="${slot.id}" data-d="-5">−5</button>
-        <input class="chip-input" type="number" inputmode="decimal" step="any"
-               data-action="weight" data-slot="${slot.id}" value="${w === '' || w == null ? '' : esc(String(w))}">
-        <button class="step" data-action="step" data-slot="${slot.id}" data-d="5">+5</button>`;
-    chipEdit = slot.reps
-      ? `
-      <div class="chip-edit stacked hidden" data-edit="${slot.id}">
-        <div class="edit-row"><span class="edit-tag">${esc(state.settings.unit)}</span>${weightRow}</div>
-        <div class="edit-row"><span class="edit-tag">reps</span>
-          <button class="step" data-action="rstep" data-slot="${slot.id}" data-d="-1">−1</button>
-          <input class="chip-input" type="number" inputmode="numeric"
-                 data-action="reps" data-slot="${slot.id}" value="${r === '' || r == null ? '' : esc(String(r))}">
-          <button class="step" data-action="rstep" data-slot="${slot.id}" data-d="1">+1</button>
-        </div>
-      </div>`
-      : `
-      <div class="chip-edit hidden" data-edit="${slot.id}">${weightRow}</div>`;
-  } else if (slot.reps) {
-    // Menu slots can carry the reps chip alone — push-ups: the rung is
-    // the load, this number decides when she moves down a notch.
-    const r = effectiveReps(day.id, slot);
-    const empty = r === '' || r == null;
-    chip = `
-      <button class="chip reps-only ${empty ? 'empty' : ''}" data-action="chip" data-slot="${slot.id}">
-        <span class="chip-add">add reps</span>
-        <span class="chip-reps">×${empty ? '—' : esc(String(r))}</span>
-        <span class="chip-caret">▾</span>
-      </button>`;
-    chipEdit = `
-      <div class="chip-edit hidden" data-edit="${slot.id}">
-        <span class="edit-tag">reps</span>
-        <button class="step" data-action="rstep" data-slot="${slot.id}" data-d="-1">−1</button>
-        <input class="chip-input" type="number" inputmode="numeric"
-               data-action="reps" data-slot="${slot.id}" value="${empty ? '' : esc(String(r))}">
-        <button class="step" data-action="rstep" data-slot="${slot.id}" data-d="1">+1</button>
-      </div>`;
+  const menu = slot.menu && slot.menu.length ? rungsHTML(slot, a) : '';
+  let steppers = '';
+  if (slot.track || slot.reps) {
+    const rows = [];
+    if (slot.track) rows.push(stepRow(state.settings.unit, 'weight', slot, 5, effectiveWeight(day.id, slot), 'decimal'));
+    if (slot.reps) rows.push(stepRow('reps', 'reps', slot, 1, effectiveReps(day.id, slot), 'numeric'));
+    steppers = `<div class="chip-edit" data-edit="${slot.id}">${rows.join('')}</div>`;
   }
+  const val = slot.track || slot.reps
+    ? `<button class="val" data-action="expand" data-slot="${slot.id}" aria-label="Adjust">${valHTML(day.id, slot)}</button>` : '';
   return `
-    <div class="slot ${done ? 'done' : ''}" data-slotcard="${slot.id}">
-      <div class="slot-head">
+    <div class="slot ${done ? 'done' : ''} ${note.trim() ? 'has-note' : ''}" data-slotcard="${slot.id}">
+      <div class="slot-row">
         ${ringHTML(slot, a)}
-        <div class="slot-name">${esc(slot.name)}</div>
-        <div class="slot-target">${esc(slot.target || '')}</div>
+        <button class="slot-main" data-action="expand" data-slot="${slot.id}" aria-expanded="false">
+          <span class="slot-name">${esc(slot.name)}<i class="note-dot" aria-label="has a note"></i></span>
+          <span class="slot-sub">${subHTML(day.id, slot)}</span>
+        </button>
+        ${val}
       </div>
-      ${pairNote}
-      ${slot.cue ? `<div class="slot-cue">${esc(slot.cue)}</div>` : ''}
-      ${setlineHTML(slot, a)}
-      ${warmup}${menu}
-      <div class="slot-foot">
-        ${chip}
-        <button class="notebtn ${note ? 'has-note' : ''}" data-action="note" data-slot="${slot.id}">✎ note</button>
-      </div>
-      ${chipEdit}
-      <div class="note-edit hidden" data-noteedit="${slot.id}">
-        <textarea rows="2" data-action="notetext" data-slot="${slot.id}"
-          placeholder="How did it go?">${esc(note)}</textarea>
+      <div class="slot-drawer hidden" data-drawer="${slot.id}">
+        ${slot.cue ? `<div class="slot-cue">${esc(slot.cue)}</div>` : ''}
+        ${pairNote}${warmup}${menu}${steppers}
+        <div class="note-edit" data-noteedit="${slot.id}">
+          <textarea rows="2" data-action="notetext" data-slot="${slot.id}"
+            placeholder="How did it go?">${esc(note)}</textarea>
+        </div>
       </div>
     </div>`;
 }
@@ -856,7 +1026,7 @@ function pairNames(day, slot) {
 }
 
 // A group can carry its own quicker rest (pairRest, seconds). While
-// she's inside the group the normal tier takes it — dock and mat agree.
+// she's inside the group the normal tier takes it — dock and card agree.
 function pairRestSec(day, slot) {
   if (day && slot && slot.pair) {
     const g = day.slots.find((s) => s.pair === slot.pair && s.pairRest > 0);
@@ -881,8 +1051,8 @@ function currentSlot(dayId) {
   return day.slots.find((s) => !(a && a.entries[s.id] && a.entries[s.id].done)) || null;
 }
 
+// Every dock state is the same 64px box, so nothing below ever jumps.
 function restDockHTML(dayId) {
-  const h = state.settings.restHeavy;
   if (rest.running) {
     const left = (rest.endsAt - Date.now()) / 1000;
     const pct = Math.max(0, Math.min(100, (1 - left / rest.total) * 100));
@@ -891,26 +1061,23 @@ function restDockHTML(dayId) {
         <div class="rest-fill" data-rest-fill style="width:${pct}%"></div>
         <div class="rest-row">
           <div class="rest-time" data-rest-time>${fmtMMSS(left)}</div>
-          <span class="rest-label">${esc(rest.label || 'resting')}</span>
-          <button class="rest-mini" data-action="rest-restart">↻</button>
-          <button class="rest-mini" data-action="rest-cancel">✕</button>
+          <span class="rest-label">${esc(rest.label || 'Rest')}</span>
+          <button class="rest-mini" data-action="rest-restart" aria-label="Restart rest">${icon('again', 2.2)}</button>
+          <button class="rest-mini" data-action="rest-cancel" aria-label="Stop rest">${icon('close', 2.2)}</button>
         </div>
       </div>`;
   }
   if (rest.done) {
-    return `<button class="rest-done" data-action="rest-ack">Rest done — go</button>`;
+    return `<button class="rest-done" data-action="rest-ack">Rest done</button>`;
   }
-  // The tier the current exercise wants takes the rose and says why.
-  // Inside a group with its own rest, the normal button takes that time.
+  // The tier the current exercise wants takes the rose; inside a group
+  // with its own rest, the normal button carries that time.
   const cur = dayId ? currentSlot(dayId) : null;
-  const heavyHint = !!(cur && cur.rest === 'heavy');
-  const pairFor = !heavyHint && cur ? pairNames(findDay(dayId), cur) : '';
+  const heavy = !!(cur && cur.rest === 'heavy');
   const nSec = pairRestSec(findDay(dayId), cur);
-  return `
-    <div class="rest-idle">
-      <button class="restbtn ${heavyHint ? 'heavy' : ''}" data-action="rest" data-tier="normal">Rest <span>${fmtMMSS(nSec)}</span>${pairFor ? `<span class="rest-for">Pairs with ${esc(pairFor)}</span>` : ''}</button>
-      <button class="restbtn ${heavyHint ? '' : 'heavy'}" data-action="rest" data-tier="heavy">Rest <span>${fmtMMSS(h)}</span>${heavyHint ? `<span class="rest-for">${esc(cur.name)} rests long</span>` : ''}</button>
-    </div>`;
+  const btn = (tier, sec, on) =>
+    `<button class="restbtn ${on ? '' : 'quiet'}" data-action="rest" data-tier="${tier}"><span class="restbtn-k">Rest</span><span class="restbtn-t">${fmtMMSS(sec)}</span></button>`;
+  return `<div class="rest-idle">${btn('normal', nSec, !heavy)}${btn('heavy', state.settings.restHeavy, heavy)}</div>`;
 }
 
 function renderRestDock() {
@@ -918,20 +1085,31 @@ function renderRestDock() {
   if (dock) dock.innerHTML = restDockHTML(currentDayId());
 }
 
-function trailHTML(dayId) {
-  const day = findDay(dayId);
-  if (!day) return '';
-  const a = state.active && state.active.dayId === dayId ? state.active : null;
-  const done = day.slots.filter((s) => a && a.entries[s.id] && a.entries[s.id].done).length;
-  const pips = day.slots.map((s, i) => `<div class="pip ${i < done ? 'on' : ''}"></div>`).join('');
-  return `${pips}<span class="trail-count">${done} of ${day.slots.length}</span>`;
+// The session trail: one segment per exercise, pinned in the dock.
+function trailHTML(day) {
+  const a = state.active && state.active.dayId === day.id ? state.active : null;
+  let done = 0;
+  const pips = day.slots.map((s) => {
+    const on = !!(a && a.entries[s.id] && a.entries[s.id].done);
+    if (on) done++;
+    return `<span class="trail-pip ${on ? 'on' : ''}"></span>`;
+  }).join('');
+  const all = done === day.slots.length && done > 0;
+  return `<div class="trail ${all ? 'all' : ''}" data-trail><div class="trail-bar">${pips}</div><span class="trail-count">${done} of ${day.slots.length}</span></div>`;
 }
 
 function renderTrail() {
   const el = $('[data-trail]');
-  const dayId = currentDayId();
-  if (el && dayId) el.innerHTML = trailHTML(dayId);
+  const day = findDay(currentDayId());
+  if (!el || !day) return;
+  const wasAll = el.classList.contains('all');
+  el.outerHTML = trailHTML(day);
+  const now = $('[data-trail]');
+  if (now.classList.contains('all') && !wasAll) now.classList.add('bloomed');
+  const fin = $('.finishbtn[data-action="finish"]');
+  if (fin) fin.classList.toggle('ready', now.classList.contains('all'));
 }
+
 function updateRestTime(left) {
   const t = $('[data-rest-time]');
   const f = $('[data-rest-fill]');
@@ -939,9 +1117,13 @@ function updateRestTime(left) {
   if (f) f.style.width = Math.max(0, Math.min(100, (1 - left / rest.total) * 100)) + '%';
 }
 
-// Consecutive slots sharing a pair key sit together on one rose mat,
-// one tag saying the deal; scattered pair members keep their per-card
-// note instead. The tag goes quiet once every member is done.
+const GROUP_WORDS = {
+  2: ['Dupla · alternate sets', 'Dupla feita'],
+  3: ['Trio · cycle through', 'Trio feito'],
+};
+
+// Consecutive pair members share one headed card; unpaired neighbours
+// share a plain card, so the page reads as a few calm blocks.
 function slotsHTML(day) {
   const a = state.active && state.active.dayId === day.id ? state.active : null;
   const groups = [];
@@ -950,35 +1132,62 @@ function slotsHTML(day) {
     if (last && last.pair && last.pair === slot.pair) last.slots.push(slot);
     else groups.push({ pair: slot.pair || null, slots: [slot] });
   }
-  return groups.map((g) => {
-    if (g.slots.length < 2) return g.slots.map((s) => slotCardHTML(day, s)).join('');
+  const merged = [];
+  for (const g of groups) {
+    const solo = g.slots.length < 2;
+    const prev = merged[merged.length - 1];
+    if (solo && prev && prev.solo) prev.slots.push(...g.slots);
+    else merged.push({ solo, pair: g.pair, slots: g.slots.slice() });
+  }
+  return merged.map((g) => {
+    if (g.solo) return `<div class="slotgroup">${g.slots.map((s) => slotCardHTML(day, s)).join('')}</div>`;
     const allDone = g.slots.every((s) => a && a.entries[s.id] && a.entries[s.id].done);
-    const word = g.slots.length > 2 ? 'Trio · cycle through' : 'Dupla · alternate sets';
+    const [word, doneWord] = GROUP_WORDS[Math.min(g.slots.length, 3)];
     return `
-      <div class="pairmat ${allDone ? 'done' : ''}">
-        <div class="pairtag">${tieSVG()}${word} · rest ${fmtMMSS(pairRestSec(day, g.slots[0]))} between</div>
+      <div class="slotgroup pair ${allDone ? 'done' : ''}">
+        <div class="grouphead">
+          <span class="gh-live">${icon('pair', 2.4)}${word}<span class="gh-rest">${fmtMMSS(pairRestSec(day, g.slots[0]))} rest</span></span>
+          <span class="gh-done">${bloomSVG('bloom-mini')}${doneWord}</span>
+        </div>
         ${g.slots.map((s) => slotCardHTML(day, s, true)).join('')}
       </div>`;
   }).join('');
 }
 
-function tieSVG() {
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M7 8h13m0 0-3-3m3 3-3 3M17 16H4m0 0 3-3m-3 3 3 3"/></svg>`;
-}
-
 function viewDay(dayId) {
   const day = findDay(dayId);
   if (!day) { location.hash = '#/'; return ''; }
+  const a = state.active && state.active.dayId === dayId ? state.active : null;
+  const allDone = !!a && day.slots.every((s) => a.entries[s.id] && a.entries[s.id].done);
   return `
     ${topbar('#/')}
     <div class="dayhead">
-      ${sprigHTML()}
-      <div class="dayhead-name">${esc(day.name)} <span class="dayhead-sub">${esc(day.subtitle)}</span></div>
+      <div class="dayhead-text">
+        <div class="dayhead-name">${esc(day.name)}</div>
+        <div class="dayhead-sub">${esc(day.subtitle)}</div>
+      </div>
+      <span class="daymark">${dayGlyphHTML(day.id)}</span>
     </div>
-    <div class="trail" data-trail>${trailHTML(day.id)}</div>
-    <div id="restdock" class="restdock">${restDockHTML(day.id)}</div>
+    <div class="dock">
+      ${trailHTML(day)}
+      <div id="restdock" class="restdock">${restDockHTML(day.id)}</div>
+    </div>
     <div class="slots">${slotsHTML(day)}</div>
-    <button class="finishbtn" data-action="finish" data-day="${day.id}">Finish session</button>`;
+    <button class="finishbtn ${allDone ? 'ready' : ''}" data-action="finish" data-day="${day.id}">Finish session</button>`;
+}
+
+// Five petals fly off a ring the moment its exercise is done.
+function petalBurst(ringEl) {
+  if (!ringEl || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const row = ringEl.closest('.slot-row');
+  if (!row) return;
+  const b = document.createElement('span');
+  b.className = 'burst';
+  b.style.left = (ringEl.offsetLeft + ringEl.offsetWidth / 2) + 'px';
+  b.style.top = (ringEl.offsetTop + ringEl.offsetHeight / 2) + 'px';
+  b.innerHTML = [0, 1, 2, 3, 4].map((i) => `<i style="--a:${i * 72 + 18}deg;--d:${i * 22}ms"></i>`).join('');
+  row.appendChild(b);
+  setTimeout(() => b.remove(), 1000);
 }
 
 function viewFinish(dayId) {
@@ -991,47 +1200,224 @@ function viewFinish(dayId) {
   if (doneCount) sub.push(`${doneCount} of ${day.slots.length}`);
   if (mins >= 1) sub.push(`${mins} min`);
   const rows = [];
-  const extras = [];
   for (const slot of day.slots) {
     const e = a ? a.entries[slot.id] : null;
     const rung = e && e.rung ? e.rung : '';
+    const noted = !!(e && e.note && e.note.trim());
+    const name = `<span class="rrow-name">${esc(slot.name)}${noted ? `<i class="rrow-note" aria-label="has a note">${icon('note', 2)}</i>` : ''}</span>`;
+    let num = '';
     if (slot.track) {
       const w = effectiveWeight(dayId, slot);
-      const wtxt = w === '' || w == null ? '—' : `${slot.added ? '+' : ''}${w} ${state.settings.unit}`;
-      let rtxt = '';
+      const wtxt = w === '' || w == null ? '—' : `${slot.added ? '+' : ''}${w}`;
+      num = `<b>${esc(wtxt)}</b> ${esc(state.settings.unit)}`;
       if (slot.reps) {
         const r = effectiveReps(dayId, slot);
-        rtxt = ` ×${r === '' || r == null ? '—' : r}`;
+        num += ` ×${r === '' || r == null ? '—' : esc(String(r))}`;
       }
-      rows.push(`<div class="rrow"><span class="rname">${esc(slot.name)}</span><span class="rnum"><b>${esc(wtxt)}</b>${esc(rtxt)}</span></div>`);
     } else if (slot.reps) {
       const r = effectiveReps(dayId, slot);
-      if (r !== '' && r != null) rows.push(`<div class="rrow"><span class="rname">${esc(slot.name)}</span><span class="rnum"><b>×${esc(String(r))}</b></span></div>`);
+      if (r !== '' && r != null) num = `<b>×${esc(String(r))}</b>`;
     }
-    if (rung) extras.push(`${slot.name} — ${rung}`);
+    if (num) rows.push(`<div class="rrow">${name}<span class="rrow-num">${num}</span></div>`);
+    if (rung) rows.push(`<div class="rrow">${num ? '<span class="rrow-name dim">↳ rung</span>' : name}<span class="rrow-rung">${esc(rung)}</span></div>`);
   }
-  const recap = rows.length || extras.length ? `
-    <div class="recap">
-      ${rows.join('')}
-      ${extras.length ? `<div class="rmenu">${esc(extras.join(' · '))}</div>` : ''}
-    </div>` : '';
+  const recap = rows.length ? `<div class="recap"><div class="recap-head">Will save</div>${rows.join('')}</div>` : '';
   return `
     ${topbar('#/day/' + dayId)}
     <div class="finish-wrap">
-      <div class="bloomwrap">${bloomHTML('bloom', 2.6)}</div>
-      <div class="boa">Boa, Carolina!</div>
-      <div class="fsub">${esc(sub.join(' · '))}</div>
+      <div class="finish-hero">
+        <div class="bloomwrap">${bloomSVG('bloom')}<span class="drift" aria-hidden="true"><i></i><i></i><i></i></span></div>
+        <div class="boa">Boa, Carolina!</div>
+        <div class="fsub">${esc(sub.join(' · '))}</div>
+      </div>
       ${recap}
       <textarea id="finishnote" rows="3" placeholder="Session note (optional)"></textarea>
       <button class="finishbtn solid" data-action="finish-save" data-day="${day.id}">Save session</button>
     </div>`;
 }
 
-/* ---------- progresso ---------- */
+/* ---------- progresso ----------
+   Three parts, one job each: roads (the ladders, goal at the far end),
+   next session (only what's ready to move), and since-the-start (where
+   every tracked lift began and where it is now — weight and reps). */
 
-function trendCards() {
+// Roads: position is the highest rung she's ever picked, so Voo's
+// deliberately easier push-up practice can't walk the road backwards.
+const ROADS = [
+  { key: 'pushups', title: 'Push-ups', ids: PUSHUP_IDS, goal: 'First set of full push-ups' },
+];
+
+function menuFor(ids) {
+  for (const id of ids) {
+    for (const day of state.program.days) {
+      const s = day.slots.find((sl) => slug(sl.name) === id && sl.menu && sl.menu.length);
+      if (s) return s.menu;
+    }
+  }
+  return null;
+}
+
+function realSessions() { return state.sessions.filter((s) => !s.auto); }
+
+// Assisted lifts read backwards: less weight is more strength. Matched on
+// "chin-up" (not "chin", which also lives inside "machine").
+function isAssisted(slot) {
+  return /chin-?ups?\b/i.test(slot.name) || /assist/i.test(slot.target || '');
+}
+
+function roadsData() {
+  const out = [];
+  for (const r of ROADS) {
+    const menu = menuFor(r.ids);
+    if (!menu) continue;
+    const rungs = menu.map(rungShort);
+    const first = {};
+    let best = -1;
+    const see = (rung, ts) => {
+      const i = rungs.indexOf(rung);
+      if (i === -1) return;
+      if (!(rung in first)) first[rung] = ts;
+      if (i > best) best = i;
+    };
+    for (const sess of state.sessions) {
+      for (const en of sess.entries || []) if (en.rung && r.ids.includes(en.exerciseId)) see(en.rung, sess.endedAt);
+    }
+    const a = state.active;
+    const aday = a && findDay(a.dayId);
+    if (aday) {
+      for (const s of aday.slots) {
+        const e = a.entries[s.id];
+        if (e && e.rung && r.ids.includes(slug(s.name))) see(e.rung, Date.now());
+      }
+    }
+    const nodes = rungs.map((name) => ({ name, when: first[name] || null }));
+    if (r.goal) nodes.push({ name: r.goal, when: null, goal: true });
+    else nodes[nodes.length - 1].goal = true;
+    out.push({ key: r.key, title: r.title, kind: 'ladder', nodes, current: best >= 0 ? best : null });
+    if (r.key === 'pushups') { const chin = assistRoad(); if (chin) out.push(chin); }
+  }
+  return out;
+}
+
+// Chin-ups run on the assisted machine: a road measured in pounds of help,
+// ending at zero — her first unassisted chin-up.
+function assistRoad() {
+  let slot = null;
+  for (const day of state.program.days) {
+    slot = day.slots.find((s) => s.track && isAssisted(s));
+    if (slot) break;
+  }
+  if (!slot) return null;
+  const id = slug(slot.name);
+  const pts = [];
+  for (const sess of realSessions()) {
+    const en = (sess.entries || []).find((e) => e.exerciseId === id && e.weight !== '' && e.weight != null);
+    if (en) pts.push({ w: en.weight, t: sess.endedAt });
+  }
+  if (!pts.length) return null;
+  return { key: 'chin', title: 'Chin-ups', kind: 'assist', start: pts[0], now: pts[pts.length - 1] };
+}
+
+function roadHTML(r) {
+  const unit = esc(state.settings.unit);
+  if (r.kind === 'assist') {
+    const start = Math.max(r.start.w, r.now.w, 1);
+    const pct = Math.max(0, Math.min(100, (1 - r.now.w / start) * 100));
+    const less = +(r.start.w - r.now.w).toFixed(1);
+    const since = less > 0 ? ` · ${less} less than ${fmtDate(r.start.t)}` : '';
+    return `
+      <div class="road">
+        <div class="road-head"><span class="road-title">${esc(r.title)}</span><span class="road-goal">First one unassisted</span></div>
+        <div class="road-bar"><i style="width:${pct.toFixed(1)}%"></i><b style="left:${pct.toFixed(1)}%"></b><span class="road-goalmark">${bloomSVG('bloom-mini')}</span></div>
+        <div class="road-ends"><span>${esc(String(start))} ${unit} help</span><span>0</span></div>
+        <div class="road-now">Now <b>${esc(String(r.now.w))} ${unit}</b> help${esc(since)}</div>
+      </div>`;
+  }
+  const cur = r.current;
+  const goalIdx = r.nodes.length - 1;
+  const reached = cur != null && cur >= goalIdx;
+  const track = r.nodes.map((n, i) => {
+    const cls = ['rn'];
+    if (cur != null && i < cur) cls.push('past');
+    if (i === cur) cls.push('now');
+    const dot = n.goal ? `<span class="${cls.join(' ')} goal">${bloomSVG('bloom-mini')}</span>` : `<span class="${cls.join(' ')}"></span>`;
+    const line = i < goalIdx ? `<span class="rl ${cur != null && i < cur ? 'past' : ''}"></span>` : '';
+    return dot + line;
+  }).join('');
+  const now = cur == null
+    ? '<span class="road-now dim">Pick a rung on the card and the road starts moving</span>'
+    : `<span class="road-now">${reached ? 'Reached' : 'Now'} <b>${esc(r.nodes[cur].name)}</b>${r.nodes[cur].when ? ` · since ${esc(fmtDate(r.nodes[cur].when))}` : ''}</span>`;
+  const goalName = r.nodes[goalIdx].name;
+  const detail = r.nodes.slice().reverse().map((n, k) => {
+    const i = goalIdx - k;
+    const state_ = i === cur ? 'now' : (cur != null && i < cur ? 'past' : 'next');
+    const meta = i === cur ? 'Now' : (n.when ? fmtDate(n.when) : '');
+    return `
+      <div class="lad-row ${state_}">
+        <div class="lad-rail"><span class="lad-dot ${state_} ${n.goal ? 'goal' : ''}"></span>${i > 0 ? '<span class="lad-line"></span>' : ''}</div>
+        <div class="lad-body"><span class="lad-name">${esc(n.name)}</span><span class="lad-meta">${esc(meta)}</span></div>
+      </div>`;
+  }).join('');
+  return `
+    <button class="road ${reached ? 'reached' : ''}" data-action="road" data-road="${r.key}" aria-expanded="false">
+      <span class="road-head"><span class="road-title">${esc(r.title)}</span><span class="road-goal">${esc(goalName)}</span></span>
+      <span class="road-track">${track}</span>
+      ${now}
+    </button>
+    <div class="lad hidden" data-roaddetail="${r.key}">${detail}</div>`;
+}
+
+// "8–12" out of a target like "4×8–12 · RIR 2–3".
+function repRange(target) {
+  const m = /[×x]\s*(\d+)\s*[–-]\s*(\d+)/.exec(String(target || ''));
+  return m ? [parseInt(m[1], 10), parseInt(m[2], 10)] : null;
+}
+
+// Reps-first: a lift is ready when the last session hit the top of its
+// range. Assisted chin-ups take one pin less; push-ups take the next rung.
+function nextSessionItems() {
+  const unit = state.settings.unit;
   const seen = new Set();
-  const cards = [];
+  const items = [];
+  const real = realSessions();
+  for (const day of state.program.days) {
+    for (const s of day.slots) {
+      if (!s.reps) continue;
+      const id = slug(s.name);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const range = repRange(s.target);
+      if (!range) continue;
+      let en = null;
+      for (let i = real.length - 1; i >= 0 && !en; i--) {
+        en = (real[i].entries || []).find((e) => e.exerciseId === id && e.reps > 0) || null;
+      }
+      if (!en) continue;
+      const [, hi] = range;
+      const ready = en.reps >= hi;
+      const close = !ready && en.reps === hi - 1;
+      if (!ready && !close) continue;
+      const assisted = s.track && isAssisted(s);
+      let what, pill;
+      if (!s.track) {
+        what = `×${en.reps}${en.rung ? ` on ${en.rung}` : ''}`;
+        pill = ready ? 'Next rung' : 'Almost';
+      } else {
+        const w = en.weight === '' || en.weight == null ? '' : ` at ${en.weight} ${unit}${assisted ? ' help' : ''}`;
+        what = `×${en.reps}${w}`;
+        pill = ready ? (assisted ? 'One pin less' : 'Add weight') : 'Almost';
+      }
+      if (close) what += ` — ×${hi} moves it`;
+      items.push({ name: s.name, what, pill, ready, slot: s });
+    }
+  }
+  return items.sort((x, y) => (y.ready ? 1 : 0) - (x.ready ? 1 : 0));
+}
+
+function sinceRows() {
+  const seen = new Set();
+  const rows = [];
+  const real = realSessions();
   for (const day of state.program.days) {
     for (const s of day.slots) {
       if (!s.track) continue;
@@ -1039,131 +1425,156 @@ function trendCards() {
       if (seen.has(id)) continue;
       seen.add(id);
       const pts = [];
-      for (const sess of state.sessions) {
-        if (sess.auto) continue;
+      for (const sess of real) {
         const en = (sess.entries || []).find((e) => e.exerciseId === id && e.weight !== '' && e.weight != null);
-        if (en) pts.push(en.weight);
+        if (en) pts.push({ w: en.weight, r: en.reps > 0 ? en.reps : null, t: sess.endedAt });
       }
-      if (pts.length < 2) continue;
-      const view = pts.slice(-12);
-      cards.push({ name: s.name, pts: view, first: view[0], last: view[view.length - 1], chin: /chin/i.test(s.name) });
+      if (!pts.length) continue;
+      rows.push({ id, name: s.name, pts, assisted: isAssisted(s) });
     }
   }
-  return cards;
+  return rows;
 }
 
-function trendSuffix(c) {
-  const d = +(c.last - c.first).toFixed(1);
-  if (c.chin && d < 0) return ' · less help = stronger';
-  if (d > 0) return ` · +${d}`;
-  if (d < 0) return ` · −${Math.abs(d)}`;
-  return ' · steady';
-}
-
-function sparkSVG(pts) {
-  const w = 120, h = 38, pad = 5;
-  const min = Math.min(...pts), max = Math.max(...pts);
-  const span = max - min || 1;
-  const x = (i) => pad + (i * (w - 2 * pad)) / Math.max(1, pts.length - 1);
-  const y = (v) => max === min ? h / 2 : h - pad - ((v - min) * (h - 2 * pad)) / span;
-  const line = pts.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-  return `<svg class="spark" width="120" height="38" viewBox="0 0 ${w} ${h}" aria-hidden="true">
-    <polyline points="${line}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(pts[pts.length - 1]).toFixed(1)}" r="3.6" fill="currentColor"/>
+// One lift's history: weight as the line, reps printed under each point.
+function historySVG(pts) {
+  const view = pts.slice(-10);
+  const W = 320, H = 92, px = 14, top = 12, base = 58;
+  const ws = view.map((p) => p.w);
+  const min = Math.min(...ws), max = Math.max(...ws);
+  const x = (i) => view.length === 1 ? W / 2 : px + (i * (W - 2 * px)) / (view.length - 1);
+  const y = (v) => max === min ? (top + base) / 2 : base - ((v - min) * (base - top)) / (max - min);
+  const line = view.map((p, i) => `${x(i).toFixed(1)},${y(p.w).toFixed(1)}`).join(' ');
+  const dots = view.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.w).toFixed(1)}" r="${i === view.length - 1 ? 4 : 2.8}"/>`).join('');
+  const reps = view.map((p, i) => p.r ? `<text x="${x(i).toFixed(1)}" y="${base + 18}">${p.r}</text>` : '').join('');
+  return `<svg class="hist" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <polyline points="${line}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <g fill="currentColor">${dots}</g><g class="hist-reps">${reps}</g>
+    <text class="hist-date" x="${px - 4}" y="${H - 2}">${esc(fmtDate(view[0].t))}</text>
+    <text class="hist-date end" x="${W - px + 4}" y="${H - 2}">${esc(fmtDate(view[view.length - 1].t))}</text>
   </svg>`;
 }
 
-function rhythmHTML() {
-  const real = state.sessions.filter((s) => !s.auto);
-  if (!real.length) return '';
-  const firstW = weekStart(real[0].endedAt);
-  const nowW = weekStart(Date.now());
-  const weeks = [];
-  const d = new Date(nowW);
-  while (weeks.length < 5 && d.getTime() >= firstW) {
-    const ws = d.getTime();
-    weeks.unshift({ start: ws, count: real.filter((s) => weekStart(s.endedAt) === ws).length });
-    d.setDate(d.getDate() - 7);
+// Friendly names for lists: "Chin-up progression" → "Chin-ups".
+function niceName(slot) {
+  const n = String(slot.name).replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+  const m = /^(.*)-up progression$/i.exec(n);
+  return m ? `${m[1]}-ups` : n;
+}
+
+// One encouraging line per lift: how far it's come, in her units.
+function gainLine(row) {
+  const unit = state.settings.unit;
+  const a = row.pts[0], b = row.pts[row.pts.length - 1];
+  if (row.pts.length < 2) return { text: 'First one in the book', up: false };
+  const d = +(b.w - a.w).toFixed(1);
+  if (row.assisted) {
+    return d < 0 ? { text: `${-d} ${unit} less help`, up: true } : { text: 'Holding steady', up: false };
   }
-  const cols = weeks.map((wk) => {
+  if (d > 0) {
+    if (a.w > 0) return { text: `+${d} ${unit} · ${Math.round((d / a.w) * 100)}% stronger`, up: true };
+    return { text: `+${d} ${unit} on top of bodyweight`, up: true };
+  }
+  if (d === 0 && a.r && b.r && b.r > a.r) return { text: `+${b.r - a.r} reps at the same weight`, up: true };
+  return { text: 'Holding steady', up: false };
+}
+
+// True when the last session is the best one yet (weight, then reps).
+function isNewBest(row) {
+  if (row.pts.length < 2) return false;
+  const last = row.pts[row.pts.length - 1];
+  return row.pts.slice(0, -1).every((p) => {
+    if (p.w !== last.w) return row.assisted ? last.w < p.w : last.w > p.w;
+    return (last.r || 0) > (p.r || 0);
+  });
+}
+
+function sinceRowHTML(row) {
+  const unit = esc(state.settings.unit);
+  const b = row.pts[row.pts.length - 1];
+  const g = gainLine(row);
+  let best = row.pts[0];
+  for (const p of row.pts) {
+    const better = row.assisted ? p.w < best.w : p.w > best.w;
+    if (better || (p.w === best.w && (p.r || 0) > (best.r || 0))) best = p;
+  }
+  const bestTxt = `${row.assisted ? 'Least help' : 'Best'}: ${best.w} ${state.settings.unit}${best.r ? ` ×${best.r}` : ''} · ${fmtDate(best.t)}`;
+  return `
+    <button class="mrow" data-action="mrow" data-m="${esc(row.id)}" aria-expanded="false">
+      <span class="m-body"><span class="mname">${esc(row.name)}</span>
+        <span class="msub ${g.up ? 'up' : ''}">${esc(g.text)}</span></span>
+      <span class="mnum">${isNewBest(row) ? `<span class="newbest" aria-label="New best last session">${bloomSVG('bloom-mini')}</span>` : ''}<b>${esc(String(b.w))}</b> ${unit}</span>
+      <span class="mchev">${icon('chev', 2.4)}</span>
+    </button>
+    <div class="tcard hidden" data-mdetail="${esc(row.id)}">
+      ${historySVG(row.pts)}
+      <div class="tline">${esc(bestTxt)}${row.pts.some((p) => p.r) ? ' · <span class="dim">reps under each point</span>' : ''}</div>
+    </div>`;
+}
+
+// Next session at a glance: one line per action, the lifts it applies to,
+// and the near-misses gathered into a single quiet line.
+function nextSessionHTML(items) {
+  const ready = items.filter((i) => i.ready);
+  const almost = items.filter((i) => !i.ready);
+  if (!ready.length && !almost.length) {
+    return '<div class="nempty">Nothing due yet — keep building reps.</div>';
+  }
+  const byAction = new Map();
+  for (const i of ready) {
+    if (!byAction.has(i.pill)) byAction.set(i.pill, []);
+    byAction.get(i.pill).push(niceName(i.slot));
+  }
+  const rows = [...byAction].map(([pill, names]) => `
+    <div class="nact"><span class="npill">${esc(pill)}</span><span class="nact-names">${esc(names.join(', '))}</span></div>`).join('');
+  const near = almost.length
+    ? `<div class="nalmost">One rep away: ${esc(almost.map((i) => niceName(i.slot)).join(', '))}</div>` : '';
+  return rows + near;
+}
+
+function rhythmHTML() {
+  const st = rhythmStats();
+  if (!st) return '';
+  const cols = st.weeks.map((wk) => {
     let dots = '';
-    for (let i = 0; i < Math.min(wk.count, 4); i++) dots += '<div class="wdot"></div>';
-    if (!wk.count) dots = '<div class="wdot zero"></div>';
-    else if (wk.start === nowW && wk.count === 1) dots += '<div class="wdot faded"></div>';
+    for (let i = 0; i < Math.min(wk.count, 4); i++) dots += '<span class="wdot"></span>';
+    if (!wk.count) dots = '<span class="wdot zero"></span>';
+    else if (wk.start === st.nowW && wk.count === 1) dots += '<span class="wdot faded"></span>';
     const label = new Date(wk.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     return `<div class="week"><div class="wdots">${dots}</div><div class="wl">${esc(label)}</div></div>`;
   }).join('');
-  let streak = 0;
-  for (let i = weeks.length - 1; i >= 0; i--) {
-    if (weeks[i].start === nowW) { if (weeks[i].count >= 2) streak++; continue; }
-    if (weeks[i].count >= 2) streak++; else break;
-  }
-  const total = weeks.reduce((s, wk) => s + wk.count, 0);
-  const line = streak >= 2
-    ? `Two a week, ${streak} weeks straight`
-    : weeks.length === 1
+  const total = st.weeks.reduce((a, wk) => a + wk.count, 0);
+  const line = st.streak >= 2
+    ? `Two a week, ${st.streak} weeks straight`
+    : st.weeks.length === 1
       ? `${total} session${total === 1 ? '' : 's'} this week`
-      : `${total} session${total === 1 ? '' : 's'} in the last ${weeks.length} weeks`;
+      : `${total} session${total === 1 ? '' : 's'} in the last ${st.weeks.length} weeks`;
   return `
-    <div class="eyebrow">Rhythm</div>
-    <div class="trend rhythm-card">
+    <div class="sechead">Rhythm</div>
+    <div class="card rhythm-card">
       <div class="rhythm">${cols}</div>
-      <div class="tline rhythm-line">${esc(line)}</div>
+      <div class="tline">${esc(line)}</div>
     </div>`;
 }
 
 function viewProgresso() {
-  const ladder = pushupLadder();
-  const firstDates = rungFirstDates();
-  let ladderHTML = '';
-  if (ladder.rungs.length) {
-    const rows = [`
-      <div class="lrow future">
-        <div class="lrail"><div class="ldot next"></div><div class="lline"></div></div>
-        <div class="lbody">
-          <div class="lname">First set of full push-ups ${bloomHTML('goalmark', 5)}</div>
-          <div class="ldesc">The goal — and it blooms</div>
-        </div>
-      </div>`];
-    for (let i = ladder.rungs.length - 1; i >= 0; i--) {
-      const r = ladder.rungs[i];
-      const isNow = ladder.current === i;
-      const isDone = ladder.current != null && i < ladder.current;
-      const when = isNow ? 'Now' : (isDone && firstDates[r] ? fmtDate(firstDates[r]) : '');
-      rows.push(`
-        <div class="lrow ${isNow || isDone ? '' : 'future'}">
-          <div class="lrail"><div class="ldot ${isNow ? 'now' : (isDone ? '' : 'next')}"></div>${i === 0 ? '' : '<div class="lline"></div>'}</div>
-          <div class="lbody">
-            ${when ? `<div class="lwhen">${esc(when)}</div>` : ''}
-            <div class="lname">${esc(r)}</div>
-          </div>
-        </div>`);
-    }
-    const cap = ladder.current == null
-      ? 'Pick a rung on the push-up card and the ladder starts moving.'
-      : 'Moves when you pick a rung on the push-up card — no separate upkeep.';
-    ladderHTML = `
-      <div class="eyebrow" style="margin-top:4px">The road to your first full set</div>
-      <div class="ladder">${rows.join('')}<div class="lcap">${esc(cap)}</div></div>`;
-  }
-  const cards = trendCards();
-  const trends = cards.length
-    ? cards.map((c) => `
-      <div class="trend">
-        <div class="tinfo">
-          <div class="tname">${esc(c.name)}</div>
-          <div class="tline">${esc(String(c.first))} → <b>${esc(String(c.last))} ${esc(state.settings.unit)}</b>${trendSuffix(c)}</div>
-        </div>
-        ${sparkSVG(c.pts)}
-      </div>`).join('')
-    : `<p class="finish-hint">Two more sessions and the lines appear.</p>`;
+  const roads = roadsData();
+  const next = nextSessionItems();
+  const rows = sinceRows();
+  const real = realSessions();
+  const sinceWord = real.length ? fmtDate(real[0].endedAt) : '';
   return `
-    ${topbar('#/', 'Progresso')}
-    ${ladderHTML}
-    <div class="eyebrow">In the gym</div>
-    ${trends}
-    ${rhythmHTML()}`;
+    ${topbar('#/')}
+    <h1 class="pagehead">Progresso</h1>
+    ${roads.length ? `<div class="sechead">Roads</div><div class="roads">${roads.map(roadHTML).join('')}</div>` : ''}
+    ${real.length ? `<div class="sechead">Next session</div><div class="card nextcard">${nextSessionHTML(next)}</div>` : ''}
+    ${rows.length ? `<div class="sechead">Since ${esc(sinceWord)}</div><div class="group mlist">${rows.map(sinceRowHTML).join('')}</div>` : ''}
+    ${!real.length ? '<p class="finish-hint">Finish a session and this page starts to fill in.</p>' : ''}
+    ${rhythmHTML()}
+    <div class="fieldmark">${sprigHTML()}</div>`;
 }
+
+/* ---------- settings & editor: inset-grouped lists ---------- */
 
 function viewSettings() {
   const s = state.settings;
@@ -1172,38 +1583,48 @@ function viewSettings() {
   ).join('');
   return `
     ${topbar('#/')}
+    <h1 class="pagehead">Settings</h1>
     <div class="settings">
-      <div class="setrow">
-        <div class="setlabel">Theme</div>
-        <div class="segwrap">${seg('theme', s.theme, [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']])}</div>
-      </div>
-      <div class="setrow">
-        <div class="setlabel">Unit</div>
-        <div class="segwrap">${seg('unit', s.unit, [['lb', 'lb'], ['kg', 'kg']])}</div>
-      </div>
-      <div class="setrow">
-        <div class="setlabel">Rest — normal</div>
-        <input class="setnum" type="number" inputmode="numeric" data-action="rest-normal" value="${s.restNormal}"> s
-      </div>
-      <div class="setrow">
-        <div class="setlabel">Rest — heavy</div>
-        <input class="setnum" type="number" inputmode="numeric" data-action="rest-heavy" value="${s.restHeavy}"> s
-      </div>
-      <div class="setrow">
-        <div class="setlabel">Program</div>
-        <a class="setbtn" href="#/program">Edit</a>
-      </div>
-      <div class="setrow">
-        <div class="setlabel">Data</div>
-        <div class="btnrow">
-          <button class="setbtn" data-action="export">Export</button>
-          <button class="setbtn" data-action="copy-json">Copy JSON</button>
-          <a class="setbtn" href="#/import">Import</a>
+      <div class="sechead">Display</div>
+      <div class="group">
+        <div class="setrow">
+          <div class="setlabel">Theme</div>
+          <div class="segwrap">${seg('theme', s.theme, [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']])}</div>
+        </div>
+        <div class="setrow">
+          <div class="setlabel">Unit</div>
+          <div class="segwrap">${seg('unit', s.unit, [['lb', 'lb'], ['kg', 'kg']])}</div>
         </div>
       </div>
-      <div class="setrow">
-        <div class="setlabel">Danger</div>
-        <button class="setbtn danger" data-action="erase">Erase all data</button>
+      <div class="sechead">Rest</div>
+      <div class="group">
+        <div class="setrow">
+          <div class="setlabel">Normal</div>
+          <label class="numfield"><input class="setnum" type="number" inputmode="numeric" data-action="rest-normal" value="${s.restNormal}">s</label>
+        </div>
+        <div class="setrow">
+          <div class="setlabel">Heavy</div>
+          <label class="numfield"><input class="setnum" type="number" inputmode="numeric" data-action="rest-heavy" value="${s.restHeavy}">s</label>
+        </div>
+      </div>
+      <div class="sechead">Program</div>
+      <div class="group">
+        <a class="grow-link" href="#/program"><span class="setlabel">Edit program</span>${icon('chev', 2.2)}</a>
+      </div>
+      <div class="sechead">Data</div>
+      <div class="group">
+        <div class="setrow">
+          <div class="setlabel">Backup</div>
+          <div class="btnrow">
+            <button class="setbtn" data-action="export">Export</button>
+            <button class="setbtn" data-action="copy-json">Copy JSON</button>
+          </div>
+        </div>
+        <a class="grow-link" href="#/import"><span class="setlabel">Import</span>${icon('chev', 2.2)}</a>
+        <div class="setrow">
+          <div class="setlabel">Erase everything</div>
+          <button class="setbtn danger" data-action="erase">Erase all data</button>
+        </div>
       </div>
       <div class="version">v${APP_VERSION} · ${state.sessions.length} sessions logged</div>
     </div>`;
@@ -1212,8 +1633,8 @@ function viewSettings() {
 function viewImport() {
   return `
     ${topbar('#/settings')}
+    <h1 class="pagehead">Import</h1>
     <div class="settings">
-      <div class="eyebrow">Import</div>
       <p class="finish-hint">Paste a Forte JSON export. Replaces everything.</p>
       <textarea id="importbox" rows="8" placeholder="{ … }"></textarea>
       <button class="finishbtn solid" data-action="import-load">Load</button>
@@ -1222,16 +1643,16 @@ function viewImport() {
 
 function viewProgram() {
   const days = state.program.days.map((day) => `
-    <div class="eyebrow">${esc(day.name)} — ${esc(day.subtitle)}</div>
-    <div class="proglist">
+    <div class="sechead">${esc(day.name)} · ${esc(day.subtitle)}</div>
+    <div class="group proglist">
       ${day.slots.map((s) => `
         <a class="progrow" href="#/program/${day.id}/${s.id}">
-          <span>${esc(s.name)}</span>
-          <span class="progrow-target">${esc(s.target || '')}</span>
+          <span class="progrow-name">${esc(s.name)}</span>
+          <span class="progrow-target">${esc(s.target || '')}</span>${icon('chev', 2.2)}
         </a>`).join('')}
-      <button class="setbtn" data-action="add-slot" data-day="${day.id}">+ Add exercise</button>
+      <button class="grow-link add" data-action="add-slot" data-day="${day.id}">${icon('plus', 2.4)}Add exercise</button>
     </div>`).join('');
-  return `${topbar('#/settings')}<div class="settings">${days}</div>`;
+  return `${topbar('#/settings')}<h1 class="pagehead">Program</h1><div class="settings">${days}</div>`;
 }
 
 function viewSlotEdit(dayId, slotId) {
@@ -1241,8 +1662,15 @@ function viewSlotEdit(dayId, slotId) {
   const field = (label, action, value, ph) => `
     <label class="editfield"><span>${label}</span>
       <input type="text" data-action="${action}" value="${esc(value || '')}" placeholder="${ph || ''}"></label>`;
+  const sw = (label, action, on) => `
+      <div class="setrow">
+        <div class="setlabel">${label}</div>
+        <button class="switch ${on ? 'on' : ''}" role="switch" aria-checked="${on ? 'true' : 'false'}"
+          aria-label="${label}" data-action="${action}"></button>
+      </div>`;
   return `
     ${topbar('#/program')}
+    <h1 class="pagehead">${esc(slot.name)}</h1>
     <div class="settings" data-editing-day="${dayId}" data-editing-slot="${slotId}">
       ${field('Name', 'edit-name', slot.name)}
       ${field('Target', 'edit-target', slot.target, 'e.g. 3×6–8 · RIR 2–3')}
@@ -1252,28 +1680,21 @@ function viewSlotEdit(dayId, slotId) {
         <textarea rows="4" data-action="edit-menu">${esc((slot.menu || []).join('\n'))}</textarea></label>
       ${field('Pair (same letter = done together)', 'edit-pair', slot.pair, 'e.g. a')}
       ${field('Pair rest (seconds — blank = normal tier)', 'edit-pairrest', slot.pairRest, 'e.g. 60')}
-      <div class="setrow">
-        <div class="setlabel">Track weight</div>
-        <button class="seg ${slot.track ? 'on' : ''}" data-action="edit-track">${slot.track ? 'On' : 'Off'}</button>
-      </div>
-      <div class="setrow">
-        <div class="setlabel">Added load (+)</div>
-        <button class="seg ${slot.added ? 'on' : ''}" data-action="edit-added">${slot.added ? 'On' : 'Off'}</button>
-      </div>
-      <div class="setrow">
-        <div class="setlabel">Track reps</div>
-        <button class="seg ${slot.reps ? 'on' : ''}" data-action="edit-reps">${slot.reps ? 'On' : 'Off'}</button>
-      </div>
-      <div class="setrow">
-        <div class="setlabel">Rest tier</div>
-        <div class="segwrap">
-          <button class="seg ${slot.rest !== 'heavy' ? 'on' : ''}" data-action="edit-rest" data-v="normal">Normal</button>
-          <button class="seg ${slot.rest === 'heavy' ? 'on' : ''}" data-action="edit-rest" data-v="heavy">Heavy</button>
+      <div class="group">
+        ${sw('Track weight', 'edit-track', slot.track)}
+        ${sw('Added load (+)', 'edit-added', slot.added)}
+        ${sw('Track reps', 'edit-reps', slot.reps)}
+        <div class="setrow">
+          <div class="setlabel">Rest tier</div>
+          <div class="segwrap">
+            <button class="seg ${slot.rest !== 'heavy' ? 'on' : ''}" data-action="edit-rest" data-v="normal">Normal</button>
+            <button class="seg ${slot.rest === 'heavy' ? 'on' : ''}" data-action="edit-rest" data-v="heavy">Heavy</button>
+          </div>
         </div>
       </div>
-      <div class="btnrow">
-        <button class="setbtn" data-action="edit-up">↑ Move up</button>
-        <button class="setbtn" data-action="edit-down">↓ Move down</button>
+      <div class="btnrow edit-actions">
+        <button class="setbtn" data-action="edit-up">${icon('up', 2.2)}Move up</button>
+        <button class="setbtn" data-action="edit-down">${icon('dn', 2.2)}Move down</button>
         <button class="setbtn danger" data-action="edit-delete">Delete</button>
       </div>
     </div>`;
@@ -1308,6 +1729,18 @@ function currentDayId() {
   return m ? m[1] : null;
 }
 
+function closeDrawers() {
+  document.querySelectorAll('[data-drawer]').forEach((d) => {
+    d.classList.add('hidden');
+    const c = d.closest('.slot');
+    if (c) {
+      c.classList.remove('open');
+      const m = c.querySelector('.slot-main');
+      if (m) m.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
 function editedSlot() {
   const wrap = $('[data-editing-slot]');
   if (!wrap) return {};
@@ -1323,7 +1756,7 @@ document.addEventListener('click', (ev) => {
   const action = t.getAttribute('data-action');
   const dayId = currentDayId();
 
-  if (action === 'rest') { restStart(t.getAttribute('data-tier'), 'Resting — take your time'); return; }
+  if (action === 'rest') { restStart(t.getAttribute('data-tier'), null); return; }
   if (action === 'rest-restart') { restStart(rest.tier || 'normal', rest.label); return; }
   if (action === 'rest-cancel') { restCancel(); return; }
   if (action === 'rest-ack') { rest.done = false; renderRestDock(); return; }
@@ -1355,18 +1788,22 @@ document.addEventListener('click', (ev) => {
     }
     save();
     const card = $(`[data-slotcard="${slotId}"]`);
-    if (card) card.classList.toggle('done', !!e.done);
-    const mat = card && card.closest('.pairmat');
-    if (mat) {
-      const cards = [...mat.querySelectorAll('[data-slotcard]')];
-      mat.classList.toggle('done', cards.every((c) => c.classList.contains('done')));
+    if (card) {
+      card.classList.toggle('done', !!e.done);
+      if (e.done) closeDrawers();
+    }
+    // A pair or trio whose last member just finished says so, with a bloom.
+    const group = card && card.closest('.slotgroup.pair');
+    if (group) {
+      const all = [...group.querySelectorAll('[data-slotcard]')].every((c) => c.classList.contains('done'));
+      if (all && !group.classList.contains('done')) group.classList.add('just');
+      group.classList.toggle('done', all);
     }
     t.outerHTML = ringHTML(slot, e);
-    const line = $(`[data-setline="${slotId}"]`);
-    if (line) {
-      const n = e.done ? total : Math.min(e.sets || 0, total - 1);
-      line.textContent = `Set ${n} of ${total} down`;
-      line.classList.toggle('hidden', !n);
+    const ringNow = card && card.querySelector('.ring');
+    if (ringNow) {
+      ringNow.classList.add('pop');
+      if (e.done) petalBurst(ringNow);
     }
     renderTrail();
     renderRestDock();
@@ -1395,14 +1832,33 @@ document.addEventListener('click', (ev) => {
       det.textContent = text;
       det.classList.toggle('hidden', !text);
     }
+    refreshRow(dayId, slot);
     return;
   }
-  if (action === 'chip') {
-    const box = $(`[data-edit="${t.getAttribute('data-slot')}"]`);
-    if (box) {
-      box.classList.toggle('hidden');
-      t.classList.toggle('open', !box.classList.contains('hidden'));
+  if (action === 'expand') {
+    // One drawer open at a time keeps the list calm. Opening never
+    // touches saved state — only an actual change starts a session.
+    const id = t.getAttribute('data-slot');
+    const box = $(`[data-drawer="${id}"]`);
+    if (!box) return;
+    const opening = box.classList.contains('hidden');
+    closeDrawers();
+    if (opening) {
+      box.classList.remove('hidden');
+      const card = box.closest('.slot');
+      card.classList.add('open');
+      card.querySelector('.slot-main').setAttribute('aria-expanded', 'true');
     }
+    return;
+  }
+  if (action === 'road' || action === 'mrow') {
+    const sel = action === 'road'
+      ? `[data-roaddetail="${t.getAttribute('data-road')}"]` : `[data-mdetail="${t.getAttribute('data-m')}"]`;
+    const box = $(sel);
+    if (!box) return;
+    const open = box.classList.toggle('hidden') === false;
+    t.classList.toggle('open', open);
+    t.setAttribute('aria-expanded', open ? 'true' : 'false');
     return;
   }
   if (action === 'step') {
@@ -1416,13 +1872,9 @@ document.addEventListener('click', (ev) => {
     const e = activeEntry(dayId, slotId);
     e.weight = Math.max(0, next);
     save();
-    const input = $(`[data-edit="${slotId}"] .chip-input`);
+    const input = $(`[data-edit="${slotId}"] input[data-action="weight"]`);
     if (input) input.value = e.weight;
-    const chipNum = $(`[data-slotcard="${slotId}"] .chip-num`);
-    if (chipNum) {
-      chipNum.textContent = (slot.added ? '+' : '') + e.weight;
-      chipNum.closest('.chip').classList.remove('empty');
-    }
+    refreshRow(dayId, slot);
     return;
   }
   if (action === 'rstep') {
@@ -1438,22 +1890,7 @@ document.addEventListener('click', (ev) => {
     save();
     const input = $(`[data-edit="${slotId}"] input[data-action="reps"]`);
     if (input) input.value = e.reps;
-    const chipReps = $(`[data-slotcard="${slotId}"] .chip-reps`);
-    if (chipReps) {
-      chipReps.textContent = '×' + e.reps;
-      // On a reps-only chip the reps ARE the value — leave the empty
-      // invite; on tracked chips "add weight" still owns the face.
-      const btn = chipReps.closest('.chip');
-      if (btn.classList.contains('reps-only')) btn.classList.remove('empty');
-    }
-    return;
-  }
-  if (action === 'note') {
-    const box = $(`[data-noteedit="${t.getAttribute('data-slot')}"]`);
-    if (box) {
-      box.classList.toggle('hidden');
-      if (!box.classList.contains('hidden')) box.querySelector('textarea').focus();
-    }
+    refreshRow(dayId, slot);
     return;
   }
 
@@ -1559,13 +1996,8 @@ document.addEventListener('input', (ev) => {
     const e = activeEntry(dayId, slotId);
     e.weight = t.value === '' ? '' : parseFloat(t.value);
     if (!Number.isFinite(e.weight)) e.weight = '';
-    const day = findDay(dayId);
-    const slot = findSlot(day, slotId);
-    const chipNum = $(`[data-slotcard="${slotId}"] .chip-num`);
-    if (chipNum && slot) {
-      chipNum.textContent = e.weight === '' ? '—' : (slot.added ? '+' : '') + e.weight;
-      if (e.weight !== '') chipNum.closest('.chip').classList.remove('empty');
-    }
+    const slot = findSlot(findDay(dayId), slotId);
+    if (slot) refreshRow(dayId, slot);
     saveSoon();
     return;
   }
@@ -1574,20 +2006,16 @@ document.addEventListener('input', (ev) => {
     const e = activeEntry(dayId, slotId);
     e.reps = t.value === '' ? '' : parseInt(t.value, 10);
     if (!Number.isFinite(e.reps)) e.reps = '';
-    const chipReps = $(`[data-slotcard="${slotId}"] .chip-reps`);
-    if (chipReps) {
-      chipReps.textContent = '×' + (e.reps === '' ? '—' : e.reps);
-      const btn = chipReps.closest('.chip');
-      if (e.reps !== '' && btn.classList.contains('reps-only')) btn.classList.remove('empty');
-    }
+    const slot = findSlot(findDay(dayId), slotId);
+    if (slot) refreshRow(dayId, slot);
     saveSoon();
     return;
   }
   if (action === 'notetext') {
     const e = activeEntry(dayId, t.getAttribute('data-slot'));
     e.note = t.value;
-    const btn = $(`[data-slotcard="${t.getAttribute('data-slot')}"] .notebtn`);
-    if (btn) btn.classList.toggle('has-note', !!t.value.trim());
+    const card = $(`[data-slotcard="${t.getAttribute('data-slot')}"]`);
+    if (card) card.classList.toggle('has-note', !!t.value.trim());
     saveSoon();
     return;
   }
@@ -1691,3 +2119,5 @@ patchProgram();
 applyTheme();
 autoFinishStale();
 render();
+// The greeting plays as its own screen once per launch, from home only.
+if ((location.hash || '#/') === '#/') showSplash();
