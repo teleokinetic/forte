@@ -140,13 +140,13 @@ input:focus-visible, textarea:focus-visible { outline: none; }
 .ico { width: 20px; height: 20px; flex: none; }
 
 /* Press feedback: everything tappable gives a little under the thumb. */
-.daytile, .upnext, .dayrow, .hlrow, .prow, .restbtn, .rest-mini, .rest-done, .ring, .rung, .val,
+.upnext, .dayrow, .hlrow, .prow, .restbtn, .rest-mini, .rest-done, .ring, .rung, .val,
 .step, .finishbtn, .seg, .setbtn, .progrow, .mrow, .road, .gear, .backlink,
 .switch, .grow-link, .slot-main {
   transition: transform 0.16s var(--ease), opacity 0.16s var(--ease),
               background-color 0.16s var(--ease), color 0.16s var(--ease);
 }
-.daytile:active, .upnext:active, .prow:active, .finishbtn:active, .road:active { transform: scale(0.982); }
+.upnext:active, .prow:active, .finishbtn:active, .road:active { transform: scale(0.982); }
 .dayrow:active, .hlrow:active { background: var(--fill); }
 .restbtn:active, .rest-done:active, .rung:active, .seg:active, .setbtn:active { transform: scale(0.96); }
 .step:active, .rest-mini:active, .gear:active { transform: scale(0.92); background: var(--fill-2); }
@@ -260,7 +260,7 @@ input:focus-visible, textarea:focus-visible { outline: none; }
 }
 .upnext-go .ico { width: 18px; height: 18px; }
 
-/* grouped day rows (A and B) */
+/* grouped day rows */
 .dayrows { margin-top: 12px; }
 .dayrow {
   display: flex; align-items: center; gap: 12px; min-height: 70px;
@@ -275,14 +275,16 @@ input:focus-visible, textarea:focus-visible { outline: none; }
 .dr-sub { color: var(--dim); font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dr-when { color: var(--dim); font-size: 13.5px; white-space: nowrap; }
 .dayrow > .ico { width: 16px; height: 16px; color: var(--faint); }
-.nexttag {
-  margin-left: 8px; font-size: 12px; font-weight: 600; line-height: 1.5;
-  color: var(--on-rose); background: var(--rose); padding: 1px 8px; border-radius: 999px;
-}
 
-/* B · Summary: Progresso as highlights */
-.sechead-link { display: flex; align-items: center; gap: 2px; }
-.sechead-link .ico { width: 15px; height: 15px; }
+/* Progresso with a short summary under it */
+.psum { margin-top: 12px; }
+.psum-head { display: flex; align-items: center; gap: 12px; padding: 13px 14px 11px 13px; }
+.psum-head .prow-t { flex: 1; }
+.psum-head + .hlrow::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 0;
+  border-top: 0.5px solid var(--sep);
+}
+.psum-head:active { opacity: 0.6; }
 .hlrow {
   display: flex; align-items: center; gap: 12px; min-height: 64px;
   padding: 11px 14px 11px 16px; position: relative;
@@ -302,11 +304,8 @@ input:focus-visible, textarea:focus-visible { outline: none; }
 .mini-rn { width: 8px; height: 8px; border-radius: 50%; background: var(--fill-2); }
 .mini-rn.on { background: var(--rose); }
 .mini-rn.goal { background: transparent; box-shadow: inset 0 0 0 1.6px var(--rose); width: 10px; height: 10px; }
-.mini-weeks { display: flex; gap: 3px; align-items: flex-end; height: 26px; flex: none; }
-.mini-wk { width: 7px; height: 26px; border-radius: 3px; background: var(--fill); position: relative; overflow: hidden; }
-.mini-wk i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--rose); }
 
-/* C · Week: seven days, then the two days as tiles */
+/* This week: seven days, a mark on each day she trained */
 .weekcard { padding: 10px 8px 12px; }
 .wk-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
 .wk-day { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 7px; border-radius: 12px; }
@@ -322,17 +321,7 @@ input:focus-visible, textarea:focus-visible { outline: none; }
 .wk-mark .dayglyph { width: 20px; height: 20px; }
 .wk-mark.empty { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fill-2); }
 .wk-line { color: var(--dim); font-size: 14.5px; text-align: center; margin: 9px 6px 0; }
-.daytile {
-  display: flex; flex-direction: column;
-  background: var(--surface); box-shadow: var(--card-shadow);
-  border-radius: var(--r-card); padding: 14px 14px 15px 16px; min-height: 168px;
-}
-.dt-k { font-size: 13.5px; font-weight: 600; color: var(--dim); margin: auto 0 2px; padding-top: 18px; }
-.daytile.next { background: var(--rose); color: var(--on-rose); box-shadow: none; }
-.daytile.next .daymark { background: color-mix(in srgb, var(--on-rose) 18%, transparent); color: var(--on-rose); }
-.daytile.next .daycard-sub, .daytile.next .dt-k { color: var(--on-rose); opacity: 0.82; }
-
-/* Preview only: the approach switcher under home */
+/* Preview only: the option switcher under home */
 .pvbar {
   margin-top: 26px; padding: 12px 12px 12px 14px; border-radius: var(--r-card);
   box-shadow: inset 0 0 0 1px var(--sep);

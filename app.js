@@ -603,12 +603,9 @@ function bloomSVG(cls) {
 }
 
 /* ---- home ----
-   Three approaches to the same material, compared in the preview:
-   A · Up next — one decisive card for the day she's on.
-   B · Summary — the days as a list, Progresso as highlights below.
-   C · Week — this week as a strip of days, the two days as tiles.
-   Every one opens with the greeting, which first plays as its own brief
-   screen at launch and then settles into place. */
+   Up next: one decisive card for the day she's on, the other day as a
+   row, then Progresso. Opens with the greeting, which first plays as its
+   own brief screen at launch and then settles into place. */
 
 function greetingHTML(extra) {
   const now = new Date();
@@ -745,8 +742,9 @@ function progressoRowHTML() {
 }
 
 // A · Up next: one card answers "what am I doing today", the other day
-// waits below as a single row.
-function homeUpNext() {
+// waits below as a single row. Two optional extras are being compared:
+// a short Progresso summary, or this week's strip at the foot.
+function homeUpNext(extra) {
   const next = suggestedDay();
   const live = !!(state.active && state.active.dayId === next.id);
   const mins = typicalMinutes(next.id);
@@ -760,8 +758,9 @@ function homeUpNext() {
       <span class="dr-body"><span class="dr-name">${esc(d.name)}</span><span class="dr-sub">${esc(d.subtitle)}</span></span>
       <span class="dr-when">${dayStatusHTML(d)}</span>${icon('chev', 2.2)}
     </a>`).join('');
+  const st = rhythmStats();
   return `
-    ${greetingHTML(weekLine(rhythmStats()).split(' · ')[0])}
+    ${greetingHTML(extra === 'week' ? '' : weekLine(st).split(' · ')[0])}
     <a class="upnext" href="#/day/${next.id}">
       <span class="upnext-top"><span class="daymark lg">${dayGlyphHTML(next.id)}</span>
         <span class="upnext-k ${live ? 'live' : ''}">${live ? 'In progress' : 'Up next'}</span></span>
@@ -771,25 +770,18 @@ function homeUpNext() {
       <span class="upnext-go">${live ? 'Pick up where you left off' : `Start ${esc(next.name)}`}${icon('chev', 2.4)}</span>
     </a>
     ${others ? `<div class="group dayrows">${others}</div>` : ''}
-    ${progressoRowHTML()}`;
+    ${extra === 'summary' ? progressoSummaryHTML() : progressoRowHTML()}
+    ${extra === 'week' ? weekStripHTML(st) : ''}`;
 }
 
-// B · Summary: the days as a calm grouped list, Progresso as a few
-// highlights that each say one encouraging thing.
-function homeSummary() {
-  const next = suggestedDay();
-  const rows = state.program.days.map((d) => `
-    <a class="dayrow" href="#/day/${d.id}">
-      <span class="daymark">${dayGlyphHTML(d.id)}</span>
-      <span class="dr-body"><span class="dr-name">${esc(d.name)}${d.id === next.id && !state.active ? '<span class="nexttag">Next</span>' : ''}</span>
-        <span class="dr-sub">${esc(d.subtitle)}</span></span>
-      <span class="dr-when">${dayStatusHTML(d)}</span>${icon('chev', 2.2)}
-    </a>`).join('');
-  const hl = [];
+// Progresso with a short summary under it: her biggest gain, where the
+// push-up road stands, and what's ready to move up. Each line opens Progresso.
+function progressoSummaryHTML() {
+  const rows = [];
   const gain = bestGain();
   if (gain) {
     const first = realSessions()[0];
-    hl.push(`
+    rows.push(`
       <a class="hlrow" href="#/progresso">
         <span class="hl-body"><span class="hl-k">${esc(gain.row.name)}</span>
           <span class="hl-v"><b>+${esc(String(gain.delta))}</b> ${esc(state.settings.unit)} <span class="hl-since">since ${esc(fmtDate(first.endedAt))}</span></span></span>
@@ -797,84 +789,68 @@ function homeSummary() {
       </a>`);
   }
   const pu = roadsData().find((r) => r.key === 'pushups');
-  if (pu) {
-    const dots = pu.nodes.map((n, i) => `<span class="mini-rn ${pu.current != null && i <= pu.current ? 'on' : ''} ${n.goal ? 'goal' : ''}"></span>`).join('');
-    hl.push(`
+  if (pu && pu.current != null) {
+    const dots = pu.nodes.map((n, i) => `<span class="mini-rn ${i <= pu.current ? 'on' : ''} ${n.goal ? 'goal' : ''}"></span>`).join('');
+    rows.push(`
       <a class="hlrow" href="#/progresso">
-        <span class="hl-body"><span class="hl-k">Push-ups</span>
-          <span class="hl-v">${pu.current != null ? esc(pu.nodes[pu.current].name) : 'Pick a rung to start the road'}</span></span>
+        <span class="hl-body"><span class="hl-k">Push-ups</span><span class="hl-v">${esc(pu.nodes[pu.current].name)}</span></span>
         <span class="mini-road">${dots}</span>
       </a>`);
   }
-  const ready = nextSessionItems().filter((i) => i.ready).length;
-  if (ready) {
-    hl.push(`
+  const ready = nextSessionItems().filter((i) => i.ready);
+  if (ready.length) {
+    rows.push(`
       <a class="hlrow" href="#/progresso">
-        <span class="hl-body"><span class="hl-k">Next session</span>
-          <span class="hl-v">${ready} lift${ready === 1 ? '' : 's'} ready to move up</span></span>
-        ${icon('chev', 2.2)}
+        <span class="hl-body"><span class="hl-k">Ready to move up</span>
+          <span class="hl-v">${esc(ready.map((i) => niceName(i.slot)).join(', '))}</span></span>
       </a>`);
   }
-  const st = rhythmStats();
-  if (st) {
-    const dots = st.weeks.map((w) => `<span class="mini-wk"><i style="height:${Math.min(w.count, 3) * 33.4}%"></i></span>`).join('');
-    hl.push(`
-      <a class="hlrow" href="#/progresso">
-        <span class="hl-body"><span class="hl-k">Rhythm</span><span class="hl-v">${esc(weekLine(st))}</span></span>
-        <span class="mini-weeks">${dots}</span>
-      </a>`);
-  }
+  if (!rows.length) return progressoRowHTML();
   return `
-    ${greetingHTML()}
-    <div class="group dayrows">${rows}</div>
-    <a class="sechead sechead-link" href="#/progresso">Progresso${icon('chev', 2.4)}</a>
-    ${hl.length ? `<div class="group">${hl.join('')}</div>` : progressoRowHTML()}`;
+    <div class="group psum">
+      <a class="psum-head" href="#/progresso">
+        <span class="prow-mark">${icon('climb', 2)}</span>
+        <span class="prow-t">Progresso</span>
+        <span class="prow-chev">${icon('chev', 2.2)}</span>
+      </a>
+      ${rows.join('')}
+    </div>`;
 }
 
-// C · Week: the week as seven days with a mark on each day she trained,
-// then the two days as tiles — the one she's on filled rose.
-function homeWeek() {
-  const next = suggestedDay();
+// This week as seven days, each trained day marked with that day's glyph.
+function weekStripHTML(st) {
   const days = weekDays().map((d) => {
     const mark = d.days.length
       ? `<span class="wk-mark">${dayGlyphHTML(d.days[d.days.length - 1])}</span>`
-      : `<span class="wk-mark empty"></span>`;
+      : '<span class="wk-mark empty"></span>';
     return `<div class="wk-day ${d.today ? 'today' : ''} ${d.future ? 'future' : ''}">
       <span class="wk-l">${esc(d.letter)}</span><span class="wk-n">${d.num}</span>${mark}</div>`;
   }).join('');
-  const tiles = state.program.days.map((d) => {
-    const on = d.id === next.id;
-    return `
-      <a class="daytile ${on ? 'next' : ''}" href="#/day/${d.id}">
-        <span class="daymark">${dayGlyphHTML(d.id)}</span>
-        <span class="dt-k">${on ? (state.active ? 'In progress' : 'Up next') : esc(cap(lastSessionFor(d.id) ? relPhrase(lastSessionFor(d.id).endedAt) : 'not yet'))}</span>
-        <span class="daycard-name">${esc(d.name)}</span>
-        <span class="daycard-sub">${esc(d.subtitle)}</span>
-      </a>`;
-  }).join('');
   return `
-    ${greetingHTML()}
+    <div class="sechead">This week</div>
     <div class="card weekcard">
       <div class="wk-row">${days}</div>
-      <div class="wk-line">${esc(weekLine(rhythmStats()))}</div>
-    </div>
-    <div class="daygrid">${tiles}</div>
-    ${progressoRowHTML()}`;
+      <div class="wk-line">${esc(weekLine(st))}</div>
+    </div>`;
 }
+
+const HOME_OPTIONS = [['a', 'A'], ['a-sum', 'A + summary'], ['a-week', 'A + week']];
 
 function homeVariant() {
   if (!window.FORTE_PREVIEW) return 'a';
-  try { return localStorage.getItem('forte-preview-home') || 'a'; } catch (e) { return 'a'; }
+  let v = 'a';
+  try { v = localStorage.getItem('forte-preview-home') || 'a'; } catch (e) {}
+  return HOME_OPTIONS.some(([k]) => k === v) ? v : 'a';
 }
 
 function viewHome() {
   const v = homeVariant();
-  const body = v === 'b' ? homeSummary() : v === 'c' ? homeWeek() : homeUpNext();
-  // Preview only: switch between the three approaches and replay the greeting.
+  const body = homeUpNext(v === 'a-sum' ? 'summary' : v === 'a-week' ? 'week' : '');
+  // Preview only: switch between the options and replay the greeting.
   const pv = window.FORTE_PREVIEW ? `
     <div class="pvbar">
-      <span class="pv-k">Home approach</span>
-      <div class="segwrap">${[['a', 'A · Up next'], ['b', 'B · Summary'], ['c', 'C · Week']].map(([k, l]) =>
+      <span class="pv-k">Home option</span>
+      <div class="segwrap">${HOME_OPTIONS.map(([k, l]) =>
         `<button class="seg ${v === k ? 'on' : ''}" data-action="pv-home" data-v="${k}">${l}</button>`).join('')}</div>
       <button class="setbtn" data-action="pv-splash">Replay greeting</button>
     </div>` : '';
