@@ -602,55 +602,329 @@ function bloomSVG(cls) {
     </svg>`;
 }
 
-/* ---- home ---- */
+/* ---- home ----
+   Three approaches to the same material, compared in the preview:
+   A · Up next — one decisive card for the day she's on.
+   B · Summary — the days as a list, Progresso as highlights below.
+   C · Week — this week as a strip of days, the two days as tiles.
+   Every one opens with the greeting, which first plays as its own brief
+   screen at launch and then settles into place. */
 
-function greetingHTML() {
+function greetingHTML(extra) {
   const now = new Date();
   const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
   return `
     <div class="greet">
-      <div class="greet-ola">${esc(saudacao())}, Carolina</div>
-      <div class="greet-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}</div>
+      <h1 class="greet-ola">${esc(saudacao())}, Carolina</h1>
+      <div class="greet-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}${extra ? ` · ${esc(extra)}` : ''}</div>
     </div>`;
 }
 
-function viewHome() {
+function lastRealSessionFor(dayId) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const s = state.sessions[i];
+    if (s.dayId === dayId && !s.auto) return s;
+  }
+  return null;
+}
+
+// The day she's on: an open session wins; otherwise the day trained least
+// recently (never-trained first), so Terra and Voo alternate on their own.
+function suggestedDay() {
+  if (state.active && findDay(state.active.dayId)) return findDay(state.active.dayId);
+  let best = null;
+  let bestT = Infinity;
+  for (const day of state.program.days) {
+    const last = lastRealSessionFor(day.id);
+    const t = last ? last.endedAt : -Infinity;
+    if (t < bestT) { best = day; bestT = t; }
+  }
+  return best;
+}
+
+// A day's usual length, from her last few finished sessions, to 5 minutes.
+function typicalMinutes(dayId) {
+  const mins = realSessions().filter((s) => s.dayId === dayId).slice(-6)
+    .map((s) => (s.endedAt - s.startedAt) / 60000).filter((m) => m >= 10 && m <= 180);
+  if (!mins.length) return null;
+  return Math.round(mins.reduce((a, b) => a + b, 0) / mins.length / 5) * 5;
+}
+
+// "In progress", "Done today", or how long ago.
+function dayStatusHTML(day) {
+  const last = lastSessionFor(day.id);
+  if (state.active && state.active.dayId === day.id) return '<span class="daycard-live">In progress</span>';
+  if (last && !last.auto && startOfDay(last.endedAt) === startOfDay(Date.now())) {
+    return `<span class="daycard-done">${bloomSVG('bloom-mini')}Done today</span>`;
+  }
+  return `<span>${last ? esc(cap(relPhrase(last.endedAt))) : 'Not yet'}</span>`;
+}
+
+// Weeks, Monday first: sessions per week and the two-a-week streak.
+function rhythmStats() {
+  const real = realSessions();
+  if (!real.length) return null;
+  const firstW = weekStart(real[0].endedAt);
+  const nowW = weekStart(Date.now());
+  const weeks = [];
+  const d = new Date(nowW);
+  while (weeks.length < 6 && d.getTime() >= firstW) {
+    const ws = d.getTime();
+    weeks.unshift({ start: ws, count: real.filter((s) => weekStart(s.endedAt) === ws).length });
+    d.setDate(d.getDate() - 7);
+  }
+  let streak = 0;
+  for (let i = weeks.length - 1; i >= 0; i--) {
+    if (weeks[i].start === nowW) { if (weeks[i].count >= 2) streak++; continue; }
+    if (weeks[i].count >= 2) streak++; else break;
+  }
+  const thisWeek = weeks.length && weeks[weeks.length - 1].start === nowW ? weeks[weeks.length - 1].count : 0;
+  return { weeks, streak, thisWeek, nowW };
+}
+
+function weekLine(st) {
+  if (!st) return 'Two a week is the rhythm';
+  const run = st.streak >= 2 ? ` · ${st.streak} weeks running` : '';
+  if (st.thisWeek >= 2) return `Two this week${run}`;
+  return `${st.thisWeek} of 2 this week${run}`;
+}
+
+// This week's seven days: what she trained on each, and which is today.
+function weekDays() {
+  const ws = weekStart(Date.now());
   const today = startOfDay(Date.now());
-  const cards = state.program.days.map((day) => {
-    const last = lastSessionFor(day.id);
-    const live = state.active && state.active.dayId === day.id;
-    let foot;
-    if (live) foot = '<span class="daycard-live">In progress</span>';
-    else if (last && !last.auto && startOfDay(last.endedAt) === today) foot = `<span class="daycard-done">${bloomSVG('bloom-mini')}Done today</span>`;
-    else foot = `<span>${last ? esc(cap(relPhrase(last.endedAt))) : 'Not yet'}</span>`;
-    return `
-      <a class="daycard" href="#/day/${day.id}">
-        <span class="daymark">${dayGlyphHTML(day.id)}</span>
-        <span class="daycard-name">${esc(day.name)}</span>
-        <span class="daycard-sub">${esc(day.subtitle)}</span>
-        <span class="daycard-last">${foot}${icon('chev', 2.2)}</span>
-      </a>`;
-  }).join('');
-  return `${topbar()}${greetingHTML()}<div class="daygrid">${cards}</div>${progressoRowHTML()}<div class="fieldmark">${sprigHTML()}</div>`;
+  const real = realSessions();
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(ws);
+    d.setDate(d.getDate() + i);
+    const t = startOfDay(d.getTime());
+    out.push({
+      t, num: d.getDate(),
+      letter: d.toLocaleDateString(undefined, { weekday: 'narrow' }),
+      days: real.filter((s) => startOfDay(s.endedAt) === t).map((s) => s.dayId),
+      today: t === today, future: t > today,
+    });
+  }
+  return out;
+}
+
+// The lift that has grown most since her first session, for a highlight.
+function bestGain() {
+  let best = null;
+  for (const row of sinceRows()) {
+    if (row.assisted || row.pts.length < 2) continue;
+    const a = row.pts[0].w, b = row.pts[row.pts.length - 1].w;
+    const pct = a > 0 ? (b - a) / a : 0;
+    if (b > a && (!best || pct > best.pct)) best = { row, pct, delta: +(b - a).toFixed(1) };
+  }
+  return best;
 }
 
 // The way into Progresso: a live one-line pulse, not a preview.
-function progressoRowHTML() {
+function progressPulse() {
   const ready = nextSessionItems().filter((i) => i.ready).length;
   const pu = roadsData().find((r) => r.key === 'pushups');
   const bits = [];
   if (ready) bits.push(`${ready} ready to move up`);
   if (pu && pu.current != null) bits.push(`Push-ups: ${pu.nodes[pu.current].name}`);
   if (!bits.length) {
-    const n = state.sessions.filter((s) => !s.auto).length;
+    const n = realSessions().length;
     bits.push(n ? `${n} session${n === 1 ? '' : 's'} logged` : 'The road to your first full set');
   }
+  return bits.join(' · ');
+}
+
+function progressoRowHTML() {
   return `
     <a class="prow" href="#/progresso">
       <span class="prow-mark">${icon('climb', 2)}</span>
-      <span class="prow-body"><span class="prow-t">Progresso</span><span class="prow-s">${esc(bits.join(' · '))}</span></span>
+      <span class="prow-body"><span class="prow-t">Progresso</span><span class="prow-s">${esc(progressPulse())}</span></span>
       <span class="prow-chev">${icon('chev', 2.2)}</span>
     </a>`;
+}
+
+// A · Up next: one card answers "what am I doing today", the other day
+// waits below as a single row.
+function homeUpNext() {
+  const next = suggestedDay();
+  const live = !!(state.active && state.active.dayId === next.id);
+  const mins = typicalMinutes(next.id);
+  const last = lastRealSessionFor(next.id);
+  const meta = [`${next.slots.length} exercises`];
+  if (mins) meta.push(`about ${mins} min`);
+  if (!live && last) meta.push(`last ${relPhrase(last.endedAt)}`);
+  const others = state.program.days.filter((d) => d.id !== next.id).map((d) => `
+    <a class="dayrow" href="#/day/${d.id}">
+      <span class="daymark">${dayGlyphHTML(d.id)}</span>
+      <span class="dr-body"><span class="dr-name">${esc(d.name)}</span><span class="dr-sub">${esc(d.subtitle)}</span></span>
+      <span class="dr-when">${dayStatusHTML(d)}</span>${icon('chev', 2.2)}
+    </a>`).join('');
+  return `
+    ${greetingHTML(weekLine(rhythmStats()).split(' · ')[0])}
+    <a class="upnext" href="#/day/${next.id}">
+      <span class="upnext-top"><span class="daymark lg">${dayGlyphHTML(next.id)}</span>
+        <span class="upnext-k ${live ? 'live' : ''}">${live ? 'In progress' : 'Up next'}</span></span>
+      <span class="upnext-name">${esc(next.name)}</span>
+      <span class="upnext-sub">${esc(next.subtitle)}</span>
+      <span class="upnext-meta">${esc(meta.join(' · '))}</span>
+      <span class="upnext-go">${live ? 'Pick up where you left off' : `Start ${esc(next.name)}`}${icon('chev', 2.4)}</span>
+    </a>
+    ${others ? `<div class="group dayrows">${others}</div>` : ''}
+    ${progressoRowHTML()}`;
+}
+
+// B · Summary: the days as a calm grouped list, Progresso as a few
+// highlights that each say one encouraging thing.
+function homeSummary() {
+  const next = suggestedDay();
+  const rows = state.program.days.map((d) => `
+    <a class="dayrow" href="#/day/${d.id}">
+      <span class="daymark">${dayGlyphHTML(d.id)}</span>
+      <span class="dr-body"><span class="dr-name">${esc(d.name)}${d.id === next.id && !state.active ? '<span class="nexttag">Next</span>' : ''}</span>
+        <span class="dr-sub">${esc(d.subtitle)}</span></span>
+      <span class="dr-when">${dayStatusHTML(d)}</span>${icon('chev', 2.2)}
+    </a>`).join('');
+  const hl = [];
+  const gain = bestGain();
+  if (gain) {
+    const first = realSessions()[0];
+    hl.push(`
+      <a class="hlrow" href="#/progresso">
+        <span class="hl-body"><span class="hl-k">${esc(gain.row.name)}</span>
+          <span class="hl-v"><b>+${esc(String(gain.delta))}</b> ${esc(state.settings.unit)} <span class="hl-since">since ${esc(fmtDate(first.endedAt))}</span></span></span>
+        ${sparkSVG(gain.row.pts.map((p) => p.w))}
+      </a>`);
+  }
+  const pu = roadsData().find((r) => r.key === 'pushups');
+  if (pu) {
+    const dots = pu.nodes.map((n, i) => `<span class="mini-rn ${pu.current != null && i <= pu.current ? 'on' : ''} ${n.goal ? 'goal' : ''}"></span>`).join('');
+    hl.push(`
+      <a class="hlrow" href="#/progresso">
+        <span class="hl-body"><span class="hl-k">Push-ups</span>
+          <span class="hl-v">${pu.current != null ? esc(pu.nodes[pu.current].name) : 'Pick a rung to start the road'}</span></span>
+        <span class="mini-road">${dots}</span>
+      </a>`);
+  }
+  const ready = nextSessionItems().filter((i) => i.ready).length;
+  if (ready) {
+    hl.push(`
+      <a class="hlrow" href="#/progresso">
+        <span class="hl-body"><span class="hl-k">Next session</span>
+          <span class="hl-v">${ready} lift${ready === 1 ? '' : 's'} ready to move up</span></span>
+        ${icon('chev', 2.2)}
+      </a>`);
+  }
+  const st = rhythmStats();
+  if (st) {
+    const dots = st.weeks.map((w) => `<span class="mini-wk"><i style="height:${Math.min(w.count, 3) * 33.4}%"></i></span>`).join('');
+    hl.push(`
+      <a class="hlrow" href="#/progresso">
+        <span class="hl-body"><span class="hl-k">Rhythm</span><span class="hl-v">${esc(weekLine(st))}</span></span>
+        <span class="mini-weeks">${dots}</span>
+      </a>`);
+  }
+  return `
+    ${greetingHTML()}
+    <div class="group dayrows">${rows}</div>
+    <a class="sechead sechead-link" href="#/progresso">Progresso${icon('chev', 2.4)}</a>
+    ${hl.length ? `<div class="group">${hl.join('')}</div>` : progressoRowHTML()}`;
+}
+
+// C · Week: the week as seven days with a mark on each day she trained,
+// then the two days as tiles — the one she's on filled rose.
+function homeWeek() {
+  const next = suggestedDay();
+  const days = weekDays().map((d) => {
+    const mark = d.days.length
+      ? `<span class="wk-mark">${dayGlyphHTML(d.days[d.days.length - 1])}</span>`
+      : `<span class="wk-mark empty"></span>`;
+    return `<div class="wk-day ${d.today ? 'today' : ''} ${d.future ? 'future' : ''}">
+      <span class="wk-l">${esc(d.letter)}</span><span class="wk-n">${d.num}</span>${mark}</div>`;
+  }).join('');
+  const tiles = state.program.days.map((d) => {
+    const on = d.id === next.id;
+    return `
+      <a class="daytile ${on ? 'next' : ''}" href="#/day/${d.id}">
+        <span class="daymark">${dayGlyphHTML(d.id)}</span>
+        <span class="dt-k">${on ? (state.active ? 'In progress' : 'Up next') : esc(cap(lastSessionFor(d.id) ? relPhrase(lastSessionFor(d.id).endedAt) : 'not yet'))}</span>
+        <span class="daycard-name">${esc(d.name)}</span>
+        <span class="daycard-sub">${esc(d.subtitle)}</span>
+      </a>`;
+  }).join('');
+  return `
+    ${greetingHTML()}
+    <div class="card weekcard">
+      <div class="wk-row">${days}</div>
+      <div class="wk-line">${esc(weekLine(rhythmStats()))}</div>
+    </div>
+    <div class="daygrid">${tiles}</div>
+    ${progressoRowHTML()}`;
+}
+
+function homeVariant() {
+  if (!window.FORTE_PREVIEW) return 'a';
+  try { return localStorage.getItem('forte-preview-home') || 'a'; } catch (e) { return 'a'; }
+}
+
+function viewHome() {
+  const v = homeVariant();
+  const body = v === 'b' ? homeSummary() : v === 'c' ? homeWeek() : homeUpNext();
+  // Preview only: switch between the three approaches and replay the greeting.
+  const pv = window.FORTE_PREVIEW ? `
+    <div class="pvbar">
+      <span class="pv-k">Home approach</span>
+      <div class="segwrap">${[['a', 'A · Up next'], ['b', 'B · Summary'], ['c', 'C · Week']].map(([k, l]) =>
+        `<button class="seg ${v === k ? 'on' : ''}" data-action="pv-home" data-v="${k}">${l}</button>`).join('')}</div>
+      <button class="setbtn" data-action="pv-splash">Replay greeting</button>
+    </div>` : '';
+  return `${topbar()}${body}<div class="fieldmark">${sprigHTML()}</div>${pv}`;
+}
+
+/* ---- greeting splash ----
+   At launch the greeting gets the whole screen for a moment: the sprig
+   draws itself, the words rise, then the words glide up into the home
+   greeting and the page settles in under them. Tap to skip. */
+
+let splashTimer = null;
+function showSplash() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const target = $('.greet-ola');
+  if (!target) return;
+  const old = $('.splash');
+  if (old) old.remove();
+  const now = new Date();
+  const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
+  const el = document.createElement('div');
+  el.className = 'splash';
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = `
+    <div class="splash-inner">
+      ${sprigHTML().replace(/<path /g, '<path pathLength="1" ')}
+      <div class="splash-ola">${esc(saudacao())}, Carolina</div>
+      <div class="splash-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}</div>
+    </div>`;
+  document.body.appendChild(el);
+  document.body.classList.add('splashing');
+  let settled = false;
+  const settle = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(splashTimer);
+    const words = el.querySelector('.splash-ola');
+    const from = words.getBoundingClientRect();
+    const to = target.getBoundingClientRect();
+    words.style.transform = `translate(${(to.left - from.left).toFixed(1)}px, ${(to.top - from.top).toFixed(1)}px)`;
+    el.classList.add('settling');
+    document.body.classList.remove('splashing');
+    document.body.classList.add('settle-in');
+    setTimeout(() => {
+      el.remove();
+      document.body.classList.remove('settle-in');
+    }, 760);
+  };
+  el.addEventListener('click', settle);
+  splashTimer = setTimeout(settle, 1900);
 }
 
 /* ---- workout ---- */
@@ -1056,8 +1330,6 @@ function viewFinish(dayId) {
 // deliberately easier push-up practice can't walk the road backwards.
 const ROADS = [
   { key: 'pushups', title: 'Push-ups', ids: PUSHUP_IDS, goal: 'First set of full push-ups' },
-  { key: 'nordics', title: 'Nordics', ids: ['nordic-ladder'] },
-  { key: 'hollow', title: 'Hollow body', ids: ['hollow-body'] },
 ];
 
 function menuFor(ids) {
@@ -1221,7 +1493,7 @@ function nextSessionItems() {
         pill = ready ? (assisted ? 'One pin less' : 'Add weight') : 'Almost';
       }
       if (close) what += ` — ×${hi} moves it`;
-      items.push({ name: s.name, what, pill, ready });
+      items.push({ name: s.name, what, pill, ready, slot: s });
     }
   }
   return items.sort((x, y) => (y.ready ? 1 : 0) - (x.ready ? 1 : 0));
@@ -1268,16 +1540,44 @@ function historySVG(pts) {
   </svg>`;
 }
 
+// Friendly names for lists: "Chin-up progression" → "Chin-ups".
+function niceName(slot) {
+  const n = String(slot.name).replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+  const m = /^(.*)-up progression$/i.exec(n);
+  return m ? `${m[1]}-ups` : n;
+}
+
+// One encouraging line per lift: how far it's come, in her units.
+function gainLine(row) {
+  const unit = state.settings.unit;
+  const a = row.pts[0], b = row.pts[row.pts.length - 1];
+  if (row.pts.length < 2) return { text: 'First one in the book', up: false };
+  const d = +(b.w - a.w).toFixed(1);
+  if (row.assisted) {
+    return d < 0 ? { text: `${-d} ${unit} less help`, up: true } : { text: 'Holding steady', up: false };
+  }
+  if (d > 0) {
+    if (a.w > 0) return { text: `+${d} ${unit} · ${Math.round((d / a.w) * 100)}% stronger`, up: true };
+    return { text: `+${d} ${unit} on top of bodyweight`, up: true };
+  }
+  if (d === 0 && a.r && b.r && b.r > a.r) return { text: `+${b.r - a.r} reps at the same weight`, up: true };
+  return { text: 'Holding steady', up: false };
+}
+
+// True when the last session is the best one yet (weight, then reps).
+function isNewBest(row) {
+  if (row.pts.length < 2) return false;
+  const last = row.pts[row.pts.length - 1];
+  return row.pts.slice(0, -1).every((p) => {
+    if (p.w !== last.w) return row.assisted ? last.w < p.w : last.w > p.w;
+    return (last.r || 0) > (p.r || 0);
+  });
+}
+
 function sinceRowHTML(row) {
   const unit = esc(state.settings.unit);
-  const a = row.pts[0], b = row.pts[row.pts.length - 1];
-  const num = row.pts.length > 1 && a.w !== b.w
-    ? `<span class="m-from">${esc(String(a.w))} →</span> <b>${esc(String(b.w))}</b> ${unit}`
-    : `<b>${esc(String(b.w))}</b> ${unit}`;
-  const subs = [];
-  if (a.r && b.r) subs.push(row.pts.length > 1 && a.r !== b.r ? `×${a.r} → ×${b.r}` : `×${b.r}`);
-  if (row.assisted) subs.push('help');
-  subs.push(`${row.pts.length} session${row.pts.length === 1 ? '' : 's'}`);
+  const b = row.pts[row.pts.length - 1];
+  const g = gainLine(row);
   let best = row.pts[0];
   for (const p of row.pts) {
     const better = row.assisted ? p.w < best.w : p.w > best.w;
@@ -1286,8 +1586,9 @@ function sinceRowHTML(row) {
   const bestTxt = `${row.assisted ? 'Least help' : 'Best'}: ${best.w} ${state.settings.unit}${best.r ? ` ×${best.r}` : ''} · ${fmtDate(best.t)}`;
   return `
     <button class="mrow" data-action="mrow" data-m="${esc(row.id)}" aria-expanded="false">
-      <span class="m-body"><span class="mname">${esc(row.name)}</span><span class="msub">${esc(subs.join(' · '))}</span></span>
-      <span class="mnum">${num}</span>
+      <span class="m-body"><span class="mname">${esc(row.name)}</span>
+        <span class="msub ${g.up ? 'up' : ''}">${esc(g.text)}</span></span>
+      <span class="mnum">${isNewBest(row) ? `<span class="newbest" aria-label="New best last session">${bloomSVG('bloom-mini')}</span>` : ''}<b>${esc(String(b.w))}</b> ${unit}</span>
       <span class="mchev">${icon('chev', 2.4)}</span>
     </button>
     <div class="tcard hidden" data-mdetail="${esc(row.id)}">
@@ -1296,37 +1597,56 @@ function sinceRowHTML(row) {
     </div>`;
 }
 
-function rhythmHTML() {
-  const real = realSessions();
-  if (!real.length) return '';
-  const firstW = weekStart(real[0].endedAt);
-  const nowW = weekStart(Date.now());
-  const weeks = [];
-  const d = new Date(nowW);
-  while (weeks.length < 6 && d.getTime() >= firstW) {
-    const ws = d.getTime();
-    weeks.unshift({ start: ws, count: real.filter((s) => weekStart(s.endedAt) === ws).length });
-    d.setDate(d.getDate() - 7);
+// A small trend line for a highlight row.
+function sparkSVG(vals) {
+  const v = vals.slice(-10);
+  const W = 72, H = 28, p = 3;
+  const min = Math.min(...v), max = Math.max(...v);
+  const x = (i) => v.length === 1 ? W / 2 : p + (i * (W - 2 * p)) / (v.length - 1);
+  const y = (n) => max === min ? H / 2 : H - p - ((n - min) * (H - 2 * p)) / (max - min);
+  const pts = v.map((n, i) => `${x(i).toFixed(1)},${y(n).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${x(v.length - 1).toFixed(1)}" cy="${y(v[v.length - 1]).toFixed(1)}" r="3" fill="currentColor"/></svg>`;
+}
+
+// Next session at a glance: one line per action, the lifts it applies to,
+// and the near-misses gathered into a single quiet line.
+function nextSessionHTML(items) {
+  const ready = items.filter((i) => i.ready);
+  const almost = items.filter((i) => !i.ready);
+  if (!ready.length && !almost.length) {
+    return '<div class="nempty">Nothing due yet — keep building reps.</div>';
   }
-  const cols = weeks.map((wk) => {
+  const byAction = new Map();
+  for (const i of ready) {
+    if (!byAction.has(i.pill)) byAction.set(i.pill, []);
+    byAction.get(i.pill).push(niceName(i.slot));
+  }
+  const rows = [...byAction].map(([pill, names]) => `
+    <div class="nact"><span class="npill">${esc(pill)}</span><span class="nact-names">${esc(names.join(', '))}</span></div>`).join('');
+  const near = almost.length
+    ? `<div class="nalmost">One rep away: ${esc(almost.map((i) => niceName(i.slot)).join(', '))}</div>` : '';
+  return rows + near;
+}
+
+function rhythmHTML() {
+  const st = rhythmStats();
+  if (!st) return '';
+  const cols = st.weeks.map((wk) => {
     let dots = '';
     for (let i = 0; i < Math.min(wk.count, 4); i++) dots += '<span class="wdot"></span>';
     if (!wk.count) dots = '<span class="wdot zero"></span>';
-    else if (wk.start === nowW && wk.count === 1) dots += '<span class="wdot faded"></span>';
+    else if (wk.start === st.nowW && wk.count === 1) dots += '<span class="wdot faded"></span>';
     const label = new Date(wk.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     return `<div class="week"><div class="wdots">${dots}</div><div class="wl">${esc(label)}</div></div>`;
   }).join('');
-  let streak = 0;
-  for (let i = weeks.length - 1; i >= 0; i--) {
-    if (weeks[i].start === nowW) { if (weeks[i].count >= 2) streak++; continue; }
-    if (weeks[i].count >= 2) streak++; else break;
-  }
-  const total = weeks.reduce((s, wk) => s + wk.count, 0);
-  const line = streak >= 2
-    ? `Two a week, ${streak} weeks straight`
-    : weeks.length === 1
+  const total = st.weeks.reduce((a, wk) => a + wk.count, 0);
+  const line = st.streak >= 2
+    ? `Two a week, ${st.streak} weeks straight`
+    : st.weeks.length === 1
       ? `${total} session${total === 1 ? '' : 's'} this week`
-      : `${total} session${total === 1 ? '' : 's'} in the last ${weeks.length} weeks`;
+      : `${total} session${total === 1 ? '' : 's'} in the last ${st.weeks.length} weeks`;
   return `
     <div class="sechead">Rhythm</div>
     <div class="card rhythm-card">
@@ -1340,20 +1660,12 @@ function viewProgresso() {
   const next = nextSessionItems();
   const rows = sinceRows();
   const real = realSessions();
-  const sinceWord = real.length
-    ? new Date(real[0].endedAt).toLocaleDateString(undefined, { month: 'long' }) : '';
-  const nextHTML = next.length
-    ? next.map((i) => `
-        <div class="nrow ${i.ready ? 'ready' : ''}">
-          <span class="m-body"><span class="mname">${esc(i.name)}</span><span class="msub">${esc(i.what)}</span></span>
-          <span class="npill">${esc(i.pill)}</span>
-        </div>`).join('')
-    : '<div class="nrow"><span class="msub">Nothing due yet — keep building reps.</span></div>';
+  const sinceWord = real.length ? fmtDate(real[0].endedAt) : '';
   return `
     ${topbar('#/')}
     <h1 class="pagehead">Progresso</h1>
     ${roads.length ? `<div class="sechead">Roads</div><div class="roads">${roads.map(roadHTML).join('')}</div>` : ''}
-    ${real.length ? `<div class="sechead">Next session</div><div class="group">${nextHTML}</div>` : ''}
+    ${real.length ? `<div class="sechead">Next session</div><div class="card nextcard">${nextSessionHTML(next)}</div>` : ''}
     ${rows.length ? `<div class="sechead">Since ${esc(sinceWord)}</div><div class="group mlist">${rows.map(sinceRowHTML).join('')}</div>` : ''}
     ${!real.length ? '<p class="finish-hint">Finish a session and this page starts to fill in.</p>' : ''}
     ${rhythmHTML()}
@@ -1542,6 +1854,12 @@ document.addEventListener('click', (ev) => {
   const action = t.getAttribute('data-action');
   const dayId = currentDayId();
 
+  if (action === 'pv-home') {
+    try { localStorage.setItem('forte-preview-home', t.getAttribute('data-v')); } catch (e) {}
+    render();
+    return;
+  }
+  if (action === 'pv-splash') { window.scrollTo(0, 0); showSplash(); return; }
   if (action === 'rest') { restStart(t.getAttribute('data-tier'), null); return; }
   if (action === 'rest-restart') { restStart(rest.tier || 'normal', rest.label); return; }
   if (action === 'rest-cancel') { restCancel(); return; }
@@ -1905,3 +2223,5 @@ patchProgram();
 applyTheme();
 autoFinishStale();
 render();
+// The greeting plays as its own screen once per launch, from home only.
+if ((location.hash || '#/') === '#/') showSplash();
