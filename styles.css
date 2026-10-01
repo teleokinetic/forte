@@ -541,7 +541,7 @@ body::before {
   width: 54px; height: 46px; flex: none; border-radius: var(--r-ctl);
   background: var(--fill); color: var(--ink);
   font-family: var(--num); font-weight: 600; font-size: 19px;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums; text-align: center;
 }
 .chip-input {
   flex: 1; min-width: 0; height: 46px; text-align: center;
