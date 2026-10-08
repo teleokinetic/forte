@@ -11,7 +11,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.13.0';
 
 let state = null;
 
@@ -61,7 +61,7 @@ function patchProgram() {
   const p = state.program;
   if (!p) return;
   const v = parseFloat(p.specVersion) || 0;
-  if (v >= 1.6) return;
+  if (v >= 1.7) return;
 
   // 1.1: Voo's push-up practice carries the full progression ladder —
   // same menu as Terra, cue marks it as the slightly easier exposure.
@@ -182,7 +182,27 @@ function patchProgram() {
     }
   }
 
-  p.specVersion = '1.6';
+  // 1.7: the hamstring curl machine takes the Nordic ladder's place on
+  // Terra (same call as Strength Rebuild, 10/7) — still in the dupla with
+  // the carry. Old Nordic entries stay in the log as they were.
+  if (v < 1.7) {
+    const terra = p.days.find((d) => d.id === 'terra');
+    if (terra && !terra.slots.some((s) => slug(s.name) === 'hamstring-curl-machine')) {
+      const curl = {
+        id: 't9', name: 'Hamstring curl (machine)', target: '3×8–12 · RIR 2–3',
+        track: true, reps: true, rest: 'normal', pair: 'b', short: 'curls',
+        cue: 'Reps first — build to 12s, then add weight · slow on the way back',
+      };
+      const i = terra.slots.findIndex((s) => slug(s.name) === 'nordic-ladder');
+      if (i !== -1) terra.slots.splice(i, 1, curl);
+      else {
+        const c = terra.slots.findIndex((s) => slug(s.name) === 'suitcase-carry');
+        terra.slots.splice(c !== -1 ? c + 1 : terra.slots.length, 0, curl);
+      }
+    }
+  }
+
+  p.specVersion = '1.7';
   save();
 }
 

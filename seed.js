@@ -1,4 +1,4 @@
-// Forte — Carolina's program seed (v1.6)
+// Forte — Carolina's program seed (v1.7)
 // This is only the FIRST-RUN seed. After first launch the program lives in
 // localStorage and is edited in-app; changes here won't overwrite it.
 //
@@ -19,7 +19,7 @@
 // Voo is lighter practice.
 
 const SEED_PROGRAM = {
-  specVersion: '1.6',
+  specVersion: '1.7',
   days: [
     {
       id: 'terra',
@@ -64,17 +64,9 @@ const SEED_PROGRAM = {
           cue: "Ribcage stacked, don't tip",
         },
         {
-          id: 't8', name: 'Nordic ladder', target: '3×4–8',
-          track: false, rest: 'normal', pair: 'b', short: 'Nordics',
-          menu: [
-            'Bilateral slider',
-            'Single-leg slider',
-            'Shallow negative',
-            'Full negative',
-            'Band assist',
-            'Full Nordic',
-          ],
-          cue: 'Slow 3–5 s eccentric — own a rung crisp, then move up',
+          id: 't9', name: 'Hamstring curl (machine)', target: '3×8–12 · RIR 2–3',
+          track: true, reps: true, rest: 'normal', pair: 'b', short: 'curls',
+          cue: 'Reps first — build to 12s, then add weight · slow on the way back',
         },
         {
           id: 't7', name: 'Hang / grip', target: '2×30–45 s',
