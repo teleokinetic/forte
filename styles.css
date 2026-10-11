@@ -756,20 +756,22 @@ body::before {
 .rl { flex: 1; height: 2px; background: var(--fill-2); margin: 0 3px; border-radius: 1px; }
 .rl.past { background: var(--rose); }
 
-/* Assisted chin-ups: one bar of help, shrinking toward zero. */
-.road-bar { position: relative; height: 6px; margin: 16px 22px 0 0; background: var(--fill-2); border-radius: 3px; }
-.road-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--rose); border-radius: 3px; }
-.road-bar b {
-  position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px;
-  border-radius: 50%; background: var(--rose); box-shadow: 0 0 0 4px var(--rose-wash);
-}
-.road-goalmark { position: absolute; right: -22px; top: 50%; margin-top: -9px; opacity: 0.55; }
-.road-goalmark .bloom-mini { width: 18px; height: 18px; }
-.road-ends {
-  display: flex; justify-content: space-between; margin: 7px 22px 0 0;
-  font-family: var(--num); font-weight: 500; font-size: 14px; color: var(--dim);
+/* Assisted chin-ups: the machine's pins as a road to zero. Pins shed are
+   filled, the current pin carries a ring that fills as reps climb toward
+   the top of the range, and the bloom at the end is the first one alone. */
+.pin-track { display: flex; align-items: center; margin-top: 14px; height: 22px; }
+.pin-ring { width: 22px; height: 22px; flex: none; }
+.pin-labels { display: flex; align-items: center; margin-top: 4px; }
+.pin-lab {
+  flex: none; display: flex; justify-content: center; white-space: nowrap;
+  font-family: var(--num); font-weight: 500; font-size: 13px; color: var(--dim);
   font-variant-numeric: tabular-nums;
 }
+.pin-lab.now { color: var(--rose-ink); font-weight: 600; }
+.pin-gap { flex: 1; margin: 0 3px; }
+.pin-gain { margin-top: 10px; font-size: 15px; line-height: 1.35; }
+.pin-gain b { color: var(--rose-ink); font-weight: 600; }
+.pin-now { margin-top: 2px; font-size: 13.5px; color: var(--dim); }
 
 /* Expanded road: its rungs as a vertical rail, the goal on top. */
 .lad {
@@ -845,6 +847,39 @@ body::before {
 .hist .hist-date { font-weight: 500; font-size: 12px; fill: var(--faint); text-anchor: start; }
 .hist .hist-date.end { text-anchor: end; }
 .tline { color: var(--dim); font-size: 14px; margin-top: 6px; }
+
+/* Since-the-start: one shared timeline. Name and gain on the left, each
+   lift's strength line on the right, all on the same calendar; month
+   guides run through every row and the axis sits at the foot. */
+.sec-note { margin: -4px 4px 10px; font-size: 13.5px; color: var(--dim); line-height: 1.35; }
+.trow, .taxis {
+  display: grid; grid-template-columns: minmax(0, 118px) minmax(0, 1fr);
+  gap: 10px; align-items: center; padding: 11px 14px;
+}
+.trow { width: 100%; position: relative; text-align: left; transition: background-color 0.16s var(--ease); }
+.trow:active { background: var(--fill); }
+.trow + .trow::before, .tcard + .trow::before {
+  content: ''; position: absolute; top: 0; left: 14px; right: 0;
+  border-top: 0.5px solid var(--sep);
+}
+.trow-l { display: flex; flex-direction: column; min-width: 0; }
+.trow-name { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+.trow-v { display: flex; align-items: baseline; gap: 6px; margin-top: 1px; }
+.trow-v b {
+  font-family: var(--num); font-variant-numeric: tabular-nums;
+  font-size: 22px; font-weight: 600; line-height: 1.1; color: var(--rose-ink);
+}
+.trow-v span {
+  font-family: var(--num); font-variant-numeric: tabular-nums;
+  font-size: 14px; font-weight: 500; color: var(--dim);
+}
+.tspark { width: 100%; height: auto; overflow: visible; }
+.ts-guide line { stroke: var(--sep); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ts-area { fill: var(--rose-wash); }
+.ts-line { fill: none; stroke: var(--rose); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+.tspark circle { fill: var(--rose); }
+.taxis { padding: 4px 14px 12px; border-top: 0.5px solid var(--sep); }
+.taxis text { font-family: var(--num); font-size: 14px; font-weight: 500; fill: var(--dim); }
 
 .rhythm-card { padding: 14px 16px 14px; }
 .rhythm { display: flex; justify-content: space-between; align-items: flex-end; gap: 6px; }

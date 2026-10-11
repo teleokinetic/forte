@@ -20,11 +20,11 @@ to installed devices as staged patches in `patchProgram()` (app.js), keyed by
 
 **Progresso** (home → the row under the day cards), computed from the log alone:
 *roads* — each ladder (push-ups, Nordics, hollow body) with its goal at the far
-end, plus chin-up assistance shrinking toward zero; position is the highest
+end, plus chin-ups as a road of machine pins down to zero (a ring on the current pin fills as reps climb); position is the highest
 rung ever picked, so Voo's easier practice can't walk a road backwards;
 *next session* — reps-first lifts that hit the top of their range (add weight,
-one pin less, next rung); *since* — every tracked lift from first session to
-now, weight and reps, tap for its history; *rhythm* — sessions per week.
+one pin less, next rung); *since* — every tracked lift on one shared timeline, strength
+from weight and reps together (Epley) as a % gain, tap a row for its history; *rhythm* — sessions per week.
 
 Design: the system font carries words; Barlow Condensed (`fonts/`) is for
 numbers only. One line per exercise; tap a row for its drawer.

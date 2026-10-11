@@ -11,7 +11,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.13.0';
+const APP_VERSION = '1.14.0';
 
 let state = null;
 
@@ -1361,27 +1361,88 @@ function assistRoad() {
   const pts = [];
   for (const sess of realSessions()) {
     const en = (sess.entries || []).find((e) => e.exerciseId === id && e.weight !== '' && e.weight != null);
-    if (en) pts.push({ w: en.weight, t: sess.endedAt });
+    if (en) pts.push({ w: +en.weight, r: en.reps > 0 ? en.reps : null, t: sess.endedAt });
   }
   if (!pts.length) return null;
-  return { key: 'chin', title: 'Chin-ups', kind: 'assist', start: pts[0], now: pts[pts.length - 1] };
+  return {
+    key: 'chin', title: 'Chin-ups', kind: 'assist', pts,
+    start: pts[0], now: pts[pts.length - 1], range: repRange(slot.target),
+  };
+}
+
+// The pins on the road, from the most help she's used down to zero. One pin
+// is the smallest drop she's ever made (the machine's step), else 10 lb / 5 kg.
+function pinNodes(r) {
+  const unit = state.settings.unit;
+  let step = 0;
+  for (let i = 1; i < r.pts.length; i++) {
+    const d = +(r.pts[i - 1].w - r.pts[i].w).toFixed(2);
+    if (d > 0 && (!step || d < step)) step = d;
+  }
+  if (!step) step = unit === 'kg' ? 5 : 10;
+  const top = Math.max(...r.pts.map((p) => p.w));
+  if (top / step > 12) step = Math.ceil(top / 8);
+  const vals = [];
+  for (let v = top; v > 0.001; v = +(v - step).toFixed(2)) vals.push(v);
+  let cur = vals.findIndex((v) => v <= r.now.w + 0.001);
+  if (cur === -1) cur = vals.length; // at zero: the goal itself
+  return { vals, cur };
+}
+
+// The rep ring on the current pin: how far through the range she is.
+function pinRingSVG(frac) {
+  const c = 59.69;
+  const arc = Math.max(0, Math.min(1, frac)) * c;
+  return `<svg class="pin-ring" viewBox="0 0 22 22" aria-hidden="true">
+    <circle cx="11" cy="11" r="9.5" fill="none" stroke="var(--rose-wash)" stroke-width="3"/>
+    ${arc > 0 ? `<circle cx="11" cy="11" r="9.5" fill="none" stroke="var(--rose)" stroke-width="3" stroke-linecap="round" stroke-dasharray="${arc.toFixed(1)} ${c}" transform="rotate(-90 11 11)"/>` : ''}
+    <circle cx="11" cy="11" r="5" fill="var(--rose)"/>
+  </svg>`;
+}
+
+function pinRoadHTML(r) {
+  const unit = state.settings.unit;
+  const { vals, cur } = pinNodes(r);
+  const reached = cur >= vals.length;
+  const [lo, hi] = r.range || [0, 0];
+  const nowR = r.now.r;
+  const frac = r.range && nowR ? (nowR - lo) / Math.max(1, hi - lo) : 0;
+  const nodes = [];
+  const labels = [];
+  vals.forEach((v, i) => {
+    const isCur = i === cur;
+    nodes.push(isCur ? pinRingSVG(frac) : `<span class="rn ${i < cur ? 'past' : ''}"></span>`);
+    labels.push(`<span class="pin-lab ${isCur ? 'now' : ''}" style="width:${isCur ? 22 : 10}px">${i === 0 || isCur ? esc(String(v)) : ''}</span>`);
+    const past = i < cur;
+    nodes.push(`<span class="rl ${past ? 'past' : ''}"></span>`);
+    labels.push('<span class="pin-gap"></span>');
+  });
+  nodes.push(`<span class="rn goal ${reached ? 'now' : ''}">${bloomSVG('bloom-mini')}</span>`);
+  labels.push('<span class="pin-lab" style="width:18px">0</span>');
+
+  const gained = +(r.start.w - r.now.w).toFixed(1);
+  const line1 = reached
+    ? '<b>First unassisted chin-up:</b> done'
+    : gained > 0
+      ? `Pulling <b>${esc(String(gained))} ${esc(unit)}</b> more of your own weight since ${esc(fmtDate(r.start.t))}`
+      : `Started ${esc(fmtDate(r.start.t))} at ${esc(String(r.start.w))} ${esc(unit)} of help`;
+  let line2 = reached ? '' : `${esc(String(r.now.w))} ${esc(unit)} of help now`;
+  if (!reached && r.range && nowR) {
+    line2 += nowR >= hi ? ` · ×${nowR} last time, one pin less next` : ` · ×${nowR} of ${hi} to the next pin`;
+  }
+  return `
+    <div class="road pinroad ${reached ? 'reached' : ''}">
+      <div class="road-head"><span class="road-title">${esc(r.title)}</span><span class="road-goal">First unassisted chin-up</span></div>
+      <div class="pin-track">${nodes.join('')}</div>
+      <div class="pin-labels">${labels.join('')}</div>
+      <div class="pin-gain">${line1}</div>
+      ${line2 ? `<div class="pin-now">${line2}</div>` : ''}
+    </div>`;
 }
 
 function roadHTML(r) {
   const unit = esc(state.settings.unit);
-  if (r.kind === 'assist') {
-    const start = Math.max(r.start.w, r.now.w, 1);
-    const pct = Math.max(0, Math.min(100, (1 - r.now.w / start) * 100));
-    const less = +(r.start.w - r.now.w).toFixed(1);
-    const since = less > 0 ? ` · ${less} less than ${fmtDate(r.start.t)}` : '';
-    return `
-      <div class="road">
-        <div class="road-head"><span class="road-title">${esc(r.title)}</span><span class="road-goal">First one unassisted</span></div>
-        <div class="road-bar"><i style="width:${pct.toFixed(1)}%"></i><b style="left:${pct.toFixed(1)}%"></b><span class="road-goalmark">${bloomSVG('bloom-mini')}</span></div>
-        <div class="road-ends"><span>${esc(String(start))} ${unit} help</span><span>0</span></div>
-        <div class="road-now">Now <b>${esc(String(r.now.w))} ${unit}</b> help${esc(since)}</div>
-      </div>`;
-  }
+  if (r.kind === 'assist') return pinRoadHTML(r);
   const cur = r.current;
   const goalIdx = r.nodes.length - 1;
   const reached = cur != null && cur >= goalIdx;
@@ -1511,54 +1572,89 @@ function niceName(slot) {
   return m ? `${m[1]}-ups` : n;
 }
 
-// One encouraging line per lift: how far it's come, in her units.
-function gainLine(row) {
+/* Since-the-start as one shared timeline: each lift's strength (weight and
+   reps folded together, so an extra rep counts too) on the same calendar,
+   with its gain as a percentage. Assisted chin-ups count help shed instead.
+   Tap a row for its weight-and-reps history. */
+
+// Epley's estimate: weight × (1 + reps/30); weight alone when reps aren't logged.
+function strengthOf(p) { return p.r ? p.w * (1 + p.r / 30) : p.w; }
+
+function strengthGain(row) {
   const unit = state.settings.unit;
   const a = row.pts[0], b = row.pts[row.pts.length - 1];
-  if (row.pts.length < 2) return { text: 'First one in the book', up: false };
-  const d = +(b.w - a.w).toFixed(1);
+  const now = `${b.w}${b.r ? `×${b.r}` : ` ${unit}`}`;
   if (row.assisted) {
-    return d < 0 ? { text: `${-d} ${unit} less help`, up: true } : { text: 'Holding steady', up: false };
+    const d = +(a.w - b.w).toFixed(1);
+    return { big: d > 0 ? `−${d} ${unit}` : `${b.w} ${unit}`, small: 'help' };
   }
-  if (d > 0) {
-    if (a.w > 0) return { text: `+${d} ${unit} · ${Math.round((d / a.w) * 100)}% stronger`, up: true };
-    return { text: `+${d} ${unit} on top of bodyweight`, up: true };
-  }
-  if (d === 0 && a.r && b.r && b.r > a.r) return { text: `+${b.r - a.r} reps at the same weight`, up: true };
-  return { text: 'Holding steady', up: false };
+  if (row.pts.length < 2) return { big: 'New', small: now };
+  const s0 = strengthOf(a), s1 = strengthOf(b);
+  if (s0 <= 0) return { big: `+${+(b.w - a.w).toFixed(1)} ${unit}`, small: now };
+  const pct = Math.round(((s1 - s0) / s0) * 100);
+  return { big: `${pct > 0 ? '+' : pct < 0 ? '−' : '±'}${Math.abs(pct)}%`, small: now };
 }
 
-// True when the last session is the best one yet (weight, then reps).
-function isNewBest(row) {
-  if (row.pts.length < 2) return false;
-  const last = row.pts[row.pts.length - 1];
-  return row.pts.slice(0, -1).every((p) => {
-    if (p.w !== last.w) return row.assisted ? last.w < p.w : last.w > p.w;
-    return (last.r || 0) > (p.r || 0);
-  });
+function strengthTimelineHTML(rows) {
+  const W = 200, H = 36, pad = 3;
+  let t0 = Infinity, t1 = -Infinity;
+  for (const row of rows) for (const p of row.pts) { t0 = Math.min(t0, p.t); t1 = Math.max(t1, p.t); }
+  const span = t1 - t0;
+  const x = (t) => span > 0 ? pad + ((t - t0) / span) * (W - 2 * pad) : W / 2;
+
+  // Month starts inside the window: faint guides on every row, labels on the axis.
+  const months = [];
+  const m = new Date(t0);
+  m.setDate(1); m.setHours(0, 0, 0, 0);
+  for (m.setMonth(m.getMonth() + 1); m.getTime() < t1; m.setMonth(m.getMonth() + 1)) months.push(m.getTime());
+  const guides = months.map((t) => `<line x1="${x(t).toFixed(1)}" y1="0" x2="${x(t).toFixed(1)}" y2="${H}"/>`).join('');
+
+  const rowHTML = (row) => {
+    const vals = row.pts.map((p) => (row.assisted ? -p.w : strengthOf(p)));
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    const y = (v) => hi === lo ? H / 2 : H - pad - ((v - lo) * (H - 2 * pad)) / (hi - lo);
+    const pts = row.pts.map((p, i) => `${x(p.t).toFixed(1)},${y(vals[i]).toFixed(1)}`);
+    const last = pts[pts.length - 1].split(',');
+    const first = pts[0].split(',');
+    const area = pts.length > 1
+      ? `<polygon points="${pts.join(' ')} ${last[0]},${H} ${first[0]},${H}" class="ts-area"/>
+         <polyline points="${pts.join(' ')}" class="ts-line"/>` : '';
+    const g = strengthGain(row);
+    const name = row.assisted ? niceName({ name: row.name }) : row.name;
+    return `
+      <button class="trow" data-action="mrow" data-m="${esc(row.id)}" aria-expanded="false">
+        <span class="trow-l"><span class="trow-name">${esc(name)}</span>
+          <span class="trow-v"><b>${esc(g.big)}</b><span>${esc(g.small)}</span></span></span>
+        <svg class="tspark" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+          <g class="ts-guide">${guides}</g>${area}
+          <circle cx="${last[0]}" cy="${last[1]}" r="3"/>
+        </svg>
+      </button>
+      <div class="tcard hidden" data-mdetail="${esc(row.id)}">${sinceDetailHTML(row)}</div>`;
+  };
+
+  // Axis: the first day, then each month start that has room for its label.
+  const labels = [`<text x="${pad}" y="13">${esc(fmtDate(t0))}</text>`];
+  for (const t of months) {
+    const xt = x(t);
+    if (xt - pad > 40 && W - xt > 16) labels.push(`<text x="${xt.toFixed(1)}" y="13" text-anchor="middle">${esc(fmtDate(t))}</text>`);
+  }
+  return `
+    <div class="group tline-card">
+      ${rows.map(rowHTML).join('')}
+      <div class="taxis"><span></span><svg class="tspark" viewBox="0 0 ${W} 18" aria-hidden="true">${labels.join('')}</svg></div>
+    </div>`;
 }
 
-function sinceRowHTML(row) {
-  const unit = esc(state.settings.unit);
-  const b = row.pts[row.pts.length - 1];
-  const g = gainLine(row);
+function sinceDetailHTML(row) {
   let best = row.pts[0];
   for (const p of row.pts) {
     const better = row.assisted ? p.w < best.w : p.w > best.w;
     if (better || (p.w === best.w && (p.r || 0) > (best.r || 0))) best = p;
   }
   const bestTxt = `${row.assisted ? 'Least help' : 'Best'}: ${best.w} ${state.settings.unit}${best.r ? ` ×${best.r}` : ''} · ${fmtDate(best.t)}`;
-  return `
-    <button class="mrow" data-action="mrow" data-m="${esc(row.id)}" aria-expanded="false">
-      <span class="m-body"><span class="mname">${esc(row.name)}</span>
-        <span class="msub ${g.up ? 'up' : ''}">${esc(g.text)}</span></span>
-      <span class="mnum">${isNewBest(row) ? `<span class="newbest" aria-label="New best last session">${bloomSVG('bloom-mini')}</span>` : ''}<b>${esc(String(b.w))}</b> ${unit}</span>
-      <span class="mchev">${icon('chev', 2.4)}</span>
-    </button>
-    <div class="tcard hidden" data-mdetail="${esc(row.id)}">
-      ${historySVG(row.pts)}
-      <div class="tline">${esc(bestTxt)}${row.pts.some((p) => p.r) ? ' · <span class="dim">reps under each point</span>' : ''}</div>
-    </div>`;
+  return `${historySVG(row.pts)}
+    <div class="tline">${esc(bestTxt)}${row.pts.some((p) => p.r) ? ' · <span class="dim">reps under each point</span>' : ''}</div>`;
 }
 
 // Next session at a glance: one line per action, the lifts it applies to,
@@ -1617,7 +1713,7 @@ function viewProgresso() {
     <h1 class="pagehead">Progresso</h1>
     ${roads.length ? `<div class="sechead">Roads</div><div class="roads">${roads.map(roadHTML).join('')}</div>` : ''}
     ${real.length ? `<div class="sechead">Next session</div><div class="card nextcard">${nextSessionHTML(next)}</div>` : ''}
-    ${rows.length ? `<div class="sechead">Since ${esc(sinceWord)}</div><div class="group mlist">${rows.map(sinceRowHTML).join('')}</div>` : ''}
+    ${rows.length ? `<div class="sechead">Since ${esc(sinceWord)}</div><p class="sec-note">Strength from weight and reps together, every lift on the same calendar.</p>${strengthTimelineHTML(rows)}` : ''}
     ${!real.length ? '<p class="finish-hint">Finish a session and this page starts to fill in.</p>' : ''}
     ${rhythmHTML()}
     <div class="fieldmark">${sprigHTML()}</div>`;
