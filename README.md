@@ -26,5 +26,10 @@ rung ever picked, so Voo's easier practice can't walk a road backwards;
 one pin less, next rung); *since* — every tracked lift on one shared timeline, strength
 from weight and reps together (Epley) as a % gain, tap a row for its history; *rhythm* — sessions per week.
 
+**Drive**: Settings → Drive backs everything up to Tanner's Google Drive after each
+Finish, through the shared Gym Sync script (see
+[strength-rebuild/drive-sync](https://github.com/teleokinetic/strength-rebuild/tree/main/drive-sync)),
+which also keeps her tabs in the *Gym Log* Google Sheet. Restore from Drive on a new phone.
+
 Design: the system font carries words; Barlow Condensed (`fonts/`) is for
 numbers only. One line per exercise; tap a row for its drawer.
