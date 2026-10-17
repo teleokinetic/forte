@@ -11,7 +11,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '1.15.0';
+const APP_VERSION = '2.0.0';
 
 let state = null;
 
@@ -61,7 +61,7 @@ function patchProgram() {
   const p = state.program;
   if (!p) return;
   const v = parseFloat(p.specVersion) || 0;
-  if (v >= 1.7) return;
+  if (v >= 2.0) return;
 
   // 1.1: Voo's push-up practice carries the full progression ladder —
   // same menu as Terra, cue marks it as the slightly easier exposure.
@@ -202,7 +202,24 @@ function patchProgram() {
     }
   }
 
-  p.specVersion = '1.7';
+  // 2.0: three days (10/17) — Água (Monday, the light day), Terra
+  // (Wednesday) and Voo (Saturday). The days are rebuilt whole from the
+  // seed; slot ids and exercise names carry over wherever a lift continues,
+  // so history, prefill, Progresso and the Gym Log read straight through.
+  // The old program is kept under programBackup. A slot's `start` is a
+  // one-time Week 1 prefill, stamped now and used until that lift is next
+  // logged.
+  if (v < 2.0) {
+    state.programBackup = {
+      at: Date.now(), specVersion: p.specVersion || '',
+      days: JSON.parse(JSON.stringify(p.days)),
+    };
+    const now = Date.now();
+    p.days = JSON.parse(JSON.stringify(SEED_PROGRAM.days));
+    for (const d of p.days) for (const s of d.slots) if (s.start != null) s.startAt = now;
+  }
+
+  p.specVersion = '2.0';
   save();
 }
 
@@ -392,14 +409,34 @@ function activeEntry(dayId, slotId) {
   return a.entries[slotId];
 }
 
-// Effective weight shown on a slot chip: session adjustment wins, else prefill.
+// A slot's one-time Week 1 load: shown until the lift is logged again after
+// the program change that set it, then ordinary prefill takes over.
+function startFor(slot) {
+  if (slot.start == null) return null;
+  const ex = slug(slot.name);
+  const since = slot.startAt || 0;
+  for (const sess of state.sessions) {
+    if ((sess.endedAt || sess.startedAt || 0) < since) continue;
+    if ((sess.entries || []).some((e) => e.exerciseId === ex && e.weight !== '' && e.weight != null)) return null;
+  }
+  return slot.start;
+}
+
+// Effective weight shown on a slot chip: session adjustment wins, else the
+// Week 1 start, else prefill.
 function effectiveWeight(dayId, slot) {
   const a = state.active;
   const e = a && a.dayId === dayId ? a.entries[slot.id] : null;
   if (e && e.weight != null && e.weight !== '') return e.weight;
   if (e && e.weight === '') return '';
+  const st = startFor(slot);
+  if (st != null) return st;
   return lastWeightFor(slug(slot.name));
 }
+
+// Optional slots (a "0–2×" add-on) never hold back the trail or Finish.
+function requiredSlots(day) { return day.slots.filter((s) => !s.optional); }
+function isDone(a, s) { return !!(a && a.entries[s.id] && a.entries[s.id].done); }
 
 // Build and push the session record for a day's active entries, then clear
 // the active session. Navigation, rest, save, and toasts stay with callers.
@@ -605,8 +642,15 @@ function topbar(backTo) {
    marks sit in a tinted tile; the sprig signs off home and Progresso; the
    bloom is how finishing looks — an exercise, a dupla, a whole session. */
 
-// Terra sprouts from the ground; Voo is two birds in flight.
+// Água is a drop over still water; Terra sprouts from the ground; Voo is
+// two birds in flight.
 function dayGlyphHTML(dayId) {
+  if (dayId === 'agua') return `
+    <svg class="dayglyph" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3.6c2.9 3.5 5 6.3 5 8.9a5 5 0 0 1-10 0c0-2.6 2.1-5.4 5-8.9z" fill="currentColor" fill-opacity=".2"/>
+      <path d="M10 13.4c.2 1.1 1 1.9 2.1 2.1" stroke-width="1.4"/>
+      <path d="M3.5 20.2c1.4-.9 2.8-.9 4.2 0s2.8.9 4.3 0 2.8-.9 4.3 0 2.8.9 4.2 0"/>
+    </g></svg>`;
   if (dayId === 'terra') return `
     <svg class="dayglyph" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <path d="M4 19.5c2.6-1.3 5.3-2 8-2s5.4.7 8 2"/>
@@ -673,10 +717,26 @@ function lastRealSessionFor(dayId) {
   return null;
 }
 
-// The day she's on: an open session wins; otherwise the day trained least
-// recently (never-trained first), so Terra and Voo alternate on their own.
+// The day she's on: an open session wins. Days with a weekday (dow) follow
+// the calendar — today's day until it's done today, then the next one on
+// the schedule; a missed day just shows in the rows below. Without
+// weekdays, the day trained least recently (never-trained first).
 function suggestedDay() {
   if (state.active && findDay(state.active.dayId)) return findDay(state.active.dayId);
+  const sched = state.program.days.filter((d) => Number.isInteger(d.dow));
+  if (sched.length) {
+    const dow = new Date().getDay();
+    const ahead = (d) => (d.dow - dow + 7) % 7;
+    const order = sched.slice().sort((x, y) => ahead(x) - ahead(y));
+    for (const d of order) {
+      if (ahead(d) === 0) {
+        const last = lastRealSessionFor(d.id);
+        if (last && startOfDay(last.endedAt) === startOfDay(Date.now())) continue;
+      }
+      return d;
+    }
+    return order[0];
+  }
   let best = null;
   let bestT = Infinity;
   for (const day of state.program.days) {
@@ -718,20 +778,29 @@ function rhythmStats() {
     weeks.unshift({ start: ws, count: real.filter((s) => weekStart(s.endedAt) === ws).length });
     d.setDate(d.getDate() - 7);
   }
+  const n = weeklyTarget();
   let streak = 0;
   for (let i = weeks.length - 1; i >= 0; i--) {
-    if (weeks[i].start === nowW) { if (weeks[i].count >= 2) streak++; continue; }
-    if (weeks[i].count >= 2) streak++; else break;
+    if (weeks[i].start === nowW) { if (weeks[i].count >= n) streak++; continue; }
+    if (weeks[i].count >= n) streak++; else break;
   }
   const thisWeek = weeks.length && weeks[weeks.length - 1].start === nowW ? weeks[weeks.length - 1].count : 0;
   return { weeks, streak, thisWeek, nowW };
 }
 
+// Sessions a week: one per scheduled day (three), else the old two.
+function weeklyTarget() {
+  const n = state.program.days.filter((d) => Number.isInteger(d.dow)).length;
+  return n || 2;
+}
+
 function weekLine(st) {
-  if (!st) return 'Two a week is the rhythm';
+  const n = weeklyTarget();
+  const word = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven'][n] || String(n);
+  if (!st) return `${word} a week is the rhythm`;
   const run = st.streak >= 2 ? ` · ${st.streak} weeks running` : '';
-  if (st.thisWeek >= 2) return `Two this week${run}`;
-  return `${st.thisWeek} of 2 this week${run}`;
+  if (st.thisWeek >= n) return `${st.thisWeek === n ? word : st.thisWeek} this week${run}`;
+  return `${st.thisWeek} of ${n} this week${run}`;
 }
 
 // This week's seven days: what she trained on each, and which is today.
@@ -1031,7 +1100,7 @@ function slotCardHTML(day, slot, onMat) {
   let steppers = '';
   if (slot.track || slot.reps) {
     const rows = [];
-    if (slot.track) rows.push(stepRow(state.settings.unit, 'weight', slot, 5, effectiveWeight(day.id, slot), 'decimal'));
+    if (slot.track) rows.push(stepRow(state.settings.unit, 'weight', slot, slot.step || 5, effectiveWeight(day.id, slot), 'decimal'));
     if (slot.reps) rows.push(stepRow('reps', 'reps', slot, 1, effectiveReps(day.id, slot), 'numeric'));
     steppers = `<div class="chip-edit" data-edit="${slot.id}">${rows.join('')}</div>`;
   }
@@ -1136,14 +1205,11 @@ function renderRestDock() {
 // The session trail: one segment per exercise, pinned in the dock.
 function trailHTML(day) {
   const a = state.active && state.active.dayId === day.id ? state.active : null;
-  let done = 0;
-  const pips = day.slots.map((s) => {
-    const on = !!(a && a.entries[s.id] && a.entries[s.id].done);
-    if (on) done++;
-    return `<span class="trail-pip ${on ? 'on' : ''}"></span>`;
-  }).join('');
-  const all = done === day.slots.length && done > 0;
-  return `<div class="trail ${all ? 'all' : ''}" data-trail><div class="trail-bar">${pips}</div><span class="trail-count">${done} of ${day.slots.length}</span></div>`;
+  const req = requiredSlots(day);
+  const done = req.filter((s) => isDone(a, s)).length;
+  const pips = day.slots.map((s) => `<span class="trail-pip ${isDone(a, s) ? 'on' : ''}"></span>`).join('');
+  const all = done === req.length && done > 0;
+  return `<div class="trail ${all ? 'all' : ''}" data-trail><div class="trail-bar">${pips}</div><span class="trail-count">${done} of ${req.length}</span></div>`;
 }
 
 function renderTrail() {
@@ -1189,7 +1255,7 @@ function slotsHTML(day) {
   }
   return merged.map((g) => {
     if (g.solo) return `<div class="slotgroup">${g.slots.map((s) => slotCardHTML(day, s)).join('')}</div>`;
-    const allDone = g.slots.every((s) => a && a.entries[s.id] && a.entries[s.id].done);
+    const allDone = g.slots.filter((s) => !s.optional).every((s) => isDone(a, s));
     const [word, doneWord] = GROUP_WORDS[Math.min(g.slots.length, 3)];
     return `
       <div class="slotgroup pair ${allDone ? 'done' : ''}">
@@ -1206,7 +1272,7 @@ function viewDay(dayId) {
   const day = findDay(dayId);
   if (!day) { location.hash = '#/'; return ''; }
   const a = state.active && state.active.dayId === dayId ? state.active : null;
-  const allDone = !!a && day.slots.every((s) => a.entries[s.id] && a.entries[s.id].done);
+  const allDone = !!a && requiredSlots(day).every((s) => isDone(a, s));
   return `
     ${topbar('#/')}
     <div class="dayhead">
@@ -1243,10 +1309,10 @@ function viewFinish(dayId) {
   const day = findDay(dayId);
   if (!day) { location.hash = '#/'; return ''; }
   const a = state.active && state.active.dayId === dayId ? state.active : null;
-  const doneCount = a ? day.slots.filter((s) => a.entries[s.id] && a.entries[s.id].done).length : 0;
+  const doneCount = a ? requiredSlots(day).filter((s) => isDone(a, s)).length : 0;
   const mins = a ? Math.round((Date.now() - a.startedAt) / 60000) : 0;
   const sub = [day.name];
-  if (doneCount) sub.push(`${doneCount} of ${day.slots.length}`);
+  if (doneCount) sub.push(`${doneCount} of ${requiredSlots(day).length}`);
   if (mins >= 1) sub.push(`${mins} min`);
   const rows = [];
   for (const slot of day.slots) {
@@ -1354,7 +1420,7 @@ function roadsData() {
 function assistRoad() {
   let slot = null;
   for (const day of state.program.days) {
-    slot = day.slots.find((s) => s.track && isAssisted(s));
+    slot = day.slots.find((s) => s.track && !s.light && isAssisted(s));
     if (slot) break;
   }
   if (!slot) return null;
@@ -1493,7 +1559,7 @@ function nextSessionItems() {
   const real = realSessions();
   for (const day of state.program.days) {
     for (const s of day.slots) {
-      if (!s.reps) continue;
+      if (!s.reps || s.light) continue;
       const id = slug(s.name);
       if (seen.has(id)) continue;
       seen.add(id);
@@ -1531,7 +1597,7 @@ function sinceRows() {
   const real = realSessions();
   for (const day of state.program.days) {
     for (const s of day.slots) {
-      if (!s.track) continue;
+      if (!s.track || s.light) continue;
       const id = slug(s.name);
       if (seen.has(id)) continue;
       seen.add(id);
