@@ -11,7 +11,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 
 let state = null;
 
@@ -457,8 +457,10 @@ function recordSession(dayId, note, auto) {
       const w = effectiveWeight(dayId, slot);
       const entry = { exerciseId: slug(slot.name), name: slot.name, weight: w === '' ? '' : parseFloat(w), note: slotNote };
       if (slot.reps) {
-        const r = effectiveReps(dayId, slot);
+        const banked = bankedReps(e);
+        const r = banked.length ? Math.min(...banked) : effectiveReps(dayId, slot);
         entry.reps = r === '' ? '' : parseInt(r, 10);
+        if (banked.length) entry.repsBySet = banked;
       }
       if (rung) entry.rung = rung;
       if (sets) entry.sets = sets;
@@ -468,8 +470,10 @@ function recordSession(dayId, note, auto) {
       // carry prefill — same deal as tracked weights.
       const entry = { exerciseId: slug(slot.name), name: slot.name, weight: '', note: slotNote };
       if (slot.reps) {
-        const r = effectiveReps(dayId, slot);
+        const banked = bankedReps(e);
+        const r = banked.length ? Math.min(...banked) : effectiveReps(dayId, slot);
         if (r !== '' && r != null) entry.reps = parseInt(r, 10);
+        if (banked.length) entry.repsBySet = banked;
       }
       if (rung) entry.rung = rung;
       if (sets) entry.sets = sets;
@@ -489,11 +493,38 @@ function recordSession(dayId, note, auto) {
   state.active = null;
 }
 
+/* ---- per-set reps (10/17) ----
+   Each tap on a counting ring banks that set's reps from the chip into
+   repsBySet. The chip always shows the set about to be banked: last
+   session's same set when there is one (the number to match or beat),
+   else the set just banked. A saved entry keeps `reps` as the LOWEST set,
+   so "one pin less" / "add weight" still means every set reached the top
+   and Progresso and the Gym Log keep reading `reps`; repsBySet rides
+   along for the detail. */
+function bankedReps(e) { return e && Array.isArray(e.repsBySet) ? e.repsBySet.filter((r) => r > 0) : []; }
+
+// The newest logged entry with reps: its per-set list, or null if it
+// predates per-set logging.
+function lastRepsBySetFor(exerciseId) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const en = (state.sessions[i].entries || []).find((x) => x.exerciseId === exerciseId && (x.reps > 0 || Array.isArray(x.repsBySet)));
+    if (en) return Array.isArray(en.repsBySet) ? en.repsBySet : null;
+  }
+  return null;
+}
+
 function effectiveReps(dayId, slot) {
   const a = state.active;
   const e = a && a.dayId === dayId ? a.entries[slot.id] : null;
   if (e && e.reps != null && e.reps !== '') return e.reps;
   if (e && e.reps === '') return '';
+  const banked = bankedReps(e);
+  if (e && e.done && banked.length) return Math.min(...banked);
+  const n = (e && e.sets) || 0;
+  const prev = lastRepsBySetFor(slug(slot.name));
+  if (prev && prev[n] > 0) return prev[n];
+  if (banked.length) return banked[banked.length - 1];
+  if (prev && prev.length) return prev[prev.length - 1];
   return lastRepsFor(slug(slot.name));
 }
 
@@ -1043,7 +1074,9 @@ function subHTML(dayId, slot) {
     }
   }
   const t = slot.target ? `<span class="sub-t">${esc(slot.target)}</span>` : '';
-  return t + (t && rung ? '<span class="sub-dot"> · </span>' : '') + rung;
+  const b = bankedReps(e);
+  const sets = b.length ? `<span class="sub-dot"> · </span><span class="sub-r now">sets ${esc(b.join('/'))}</span>` : '';
+  return t + (t && rung ? '<span class="sub-dot"> · </span>' : '') + rung + sets;
 }
 
 // Today's number, right-aligned: weight (and reps), or reps alone on push-ups.
@@ -1326,11 +1359,13 @@ function viewFinish(dayId) {
       const wtxt = w === '' || w == null ? '—' : `${slot.added ? '+' : ''}${w}`;
       num = `<b>${esc(wtxt)}</b> ${esc(state.settings.unit)}`;
       if (slot.reps) {
-        const r = effectiveReps(dayId, slot);
+        const b = bankedReps(e);
+        const r = b.length ? b.join('/') : effectiveReps(dayId, slot);
         num += ` ×${r === '' || r == null ? '—' : esc(String(r))}`;
       }
     } else if (slot.reps) {
-      const r = effectiveReps(dayId, slot);
+      const b = bankedReps(e);
+      const r = b.length ? b.join('/') : effectiveReps(dayId, slot);
       if (r !== '' && r != null) num = `<b>×${esc(String(r))}</b>`;
     }
     if (num) rows.push(`<div class="rrow">${name}<span class="rrow-num">${num}</span></div>`);
@@ -1992,7 +2027,18 @@ document.addEventListener('click', (ev) => {
       if (e.done) {
         e.done = false;
         e.sets = 0;
+        delete e.repsBySet;
       } else {
+        if (slot.reps) {
+          // Bank this set's reps, then let the chip move on to the next set.
+          const n = e.sets || 0;
+          const r = parseInt(effectiveReps(dayId, slot), 10);
+          const list = Array.isArray(e.repsBySet) ? e.repsBySet.slice(0, n) : [];
+          while (list.length < n) list.push(null);
+          list[n] = Number.isFinite(r) ? r : null;
+          e.repsBySet = list;
+          delete e.reps;
+        }
         e.sets = Math.min((e.sets || 0) + 1, total);
         e.done = e.sets >= total;
         // The banked slot rides along so its group's own rest (e.g. the
@@ -2021,6 +2067,9 @@ document.addEventListener('click', (ev) => {
       ringNow.classList.add('pop');
       if (e.done) petalBurst(ringNow);
     }
+    refreshRow(dayId, slot);
+    const rin = $(`[data-edit="${slotId}"] input[data-action="reps"]`);
+    if (rin) { const r = effectiveReps(dayId, slot); rin.value = r === '' || r == null ? '' : r; }
     renderTrail();
     renderRestDock();
     return;
