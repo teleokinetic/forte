@@ -11,7 +11,7 @@
 /* ============================== state ============================== */
 
 const STORE_KEY = 'forte-state-v1';
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.2.0';
 
 let state = null;
 
@@ -642,6 +642,8 @@ document.addEventListener('visibilitychange', () => {
 const ICON_PATHS = {
   back: '<path d="M15 5l-7 7 7 7"/>',
   chev: '<path d="M9 5l7 7-7 7"/>',
+  down: '<path d="M6 9l6 6 6-6"/>',
+  clock: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M10 2h4"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   close: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   again: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/>',
@@ -658,14 +660,22 @@ function icon(name, sw) {
     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name]}</svg>`;
 }
 
+function reducedMotion() { return matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
 function cap(s) { s = String(s); return s.charAt(0).toUpperCase() + s.slice(1); }
 
-function topbar(backTo) {
-  const left = backTo
-    ? `<a class="backlink" href="${backTo}">${icon('back', 2.4)}Back</a>`
-    : `<div class="wordmark">Forte</div>`;
-  const right = backTo ? '' : `<a class="gear" href="#/settings" aria-label="Settings">${icon('gear', 1.8)}</a>`;
-  return `<div class="topbar">${left}${right}</div>`;
+// Home: the date and the gear. A session is a sheet over home, so it
+// closes downward to Início; every other page steps back.
+function topbar(backTo, sheet) {
+  if (!backTo) {
+    const date = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    return `<div class="topbar home"><div class="topdate">${esc(date)}</div>
+      <a class="gear" href="#/settings" aria-label="Settings">${icon('gear', 1.8)}</a></div>`;
+  }
+  const left = sheet
+    ? `<a class="backlink" href="${backTo}" aria-label="Close session, back to Início">${icon('down', 2.4)}Início</a>`
+    : `<a class="backlink" href="${backTo}">${icon('back', 2.4)}Back</a>`;
+  return `<div class="topbar">${left}</div>`;
 }
 
 /* ---- ornaments ----
@@ -697,10 +707,11 @@ function dayGlyphHTML(dayId) {
   return '';
 }
 
-// A rose stem: one bud, two leaves. The quiet sign-off at the foot of a page.
-function sprigHTML() {
+// A rose stem: one bud, two leaves. It stands on the Up next card, draws
+// itself in the launch greeting, and signs off Progresso.
+function sprigHTML(cls) {
   return `
-    <svg class="sprig" viewBox="0 0 48 76" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <svg class="sprig ${cls || ''}" viewBox="0 0 48 76" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
       <path d="M24 74c-1.2-13 .6-27-.2-46"/>
       <path d="M23.7 55c-6.8-.4-11.2-5-12.2-11.6 6.4.4 11 5 12.2 11.6z" fill="currentColor" fill-opacity=".18"/>
       <path d="M24 44.5c6.6-.8 10.8-5.6 11.4-12-6.3.6-10.7 5.4-11.4 12z" fill="currentColor" fill-opacity=".18"/>
@@ -731,13 +742,7 @@ function bloomSVG(cls) {
    own brief screen at launch and then settles into place. */
 
 function greetingHTML() {
-  const now = new Date();
-  const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
-  return `
-    <div class="greet">
-      <h1 class="greet-ola">${esc(saudacao())}, Carolina</h1>
-      <div class="greet-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}</div>
-    </div>`;
+  return `<div class="greet"><h1 class="greet-ola">${esc(saudacao())}, Carolina</h1></div>`;
 }
 
 function lastRealSessionFor(dayId) {
@@ -793,7 +798,26 @@ function dayStatusHTML(day) {
   if (last && !last.auto && startOfDay(last.endedAt) === startOfDay(Date.now())) {
     return `<span class="daycard-done">${bloomSVG('bloom-mini')}Done today</span>`;
   }
-  return `<span>${last ? esc(cap(relPhrase(last.endedAt))) : 'Not yet'}</span>`;
+  return `<span>${last ? esc(lastPhrase(last.endedAt)) : 'Not yet'}</span>`;
+}
+
+// When a day was last trained: "Yesterday", a weekday within the week,
+// then the plain relative phrase.
+function lastPhrase(ts) {
+  const days = Math.round((startOfDay(Date.now()) - startOfDay(ts)) / 86400000);
+  if (days === 1) return 'Yesterday';
+  if (days > 1 && days < 7) return new Date(ts).toLocaleDateString(undefined, { weekday: 'long' });
+  return cap(relPhrase(ts));
+}
+
+// When the up-next day falls: "Today", "Tomorrow", or its weekday.
+function whenLabel(day) {
+  if (!Number.isInteger(day.dow)) return '';
+  const ahead = (day.dow - new Date().getDay() + 7) % 7;
+  if (ahead === 0) return 'Today';
+  if (ahead === 1) return 'Tomorrow';
+  const d = new Date(); d.setDate(d.getDate() + ahead);
+  return d.toLocaleDateString(undefined, { weekday: 'long' });
 }
 
 // Weeks, Monday first: sessions per week and the two-a-week streak.
@@ -866,81 +890,69 @@ function bestGain() {
   return best;
 }
 
-// The way into Progresso: a tinted strip, not another card like the days.
-// One headline (what's ready, else her biggest gain), the push-up rung
-// under it, and the push-up road drawn small on the right.
+// The way into Progresso: the last row on home, in the days' list. A pill
+// when lifts are ready to move up; no second line unless there's
+// something to do.
 function progressoRowHTML() {
   const ready = nextSessionItems().filter((i) => i.ready).length;
-  const gain = bestGain();
-  const pu = roadsData().find((r) => r.key === 'pushups');
-  let main;
-  if (ready) main = `${ready} lift${ready === 1 ? '' : 's'} ready to move up`;
-  else if (gain) main = `${gain.row.name} +${gain.delta} ${state.settings.unit}`;
-  else main = realSessions().length ? 'Every session counts here' : 'The road to your first full set';
-  const sub = pu && pu.current != null ? `Push-ups · ${pu.nodes[pu.current].name}` : '';
-  const road = pu ? `<span class="mini-road">${pu.nodes.map((n, i) =>
-    `<span class="mini-rn ${pu.current != null && i <= pu.current ? 'on' : ''} ${n.goal ? 'goal' : ''}"></span>`).join('')}</span>` : '';
   return `
-    <a class="prow" href="#/progresso">
-      <span class="prow-body">
-        <span class="prow-k">Progresso${icon('chev', 2.6)}</span>
-        <span class="prow-main">${esc(main)}</span>
-        ${sub ? `<span class="prow-s">${esc(sub)}</span>` : ''}
-      </span>
-      ${road}
+    <a class="dayrow progrow-home" href="#/progresso">
+      <span class="dr-glyph">${icon('climb', 1.8)}</span>
+      <span class="dr-name">Progresso</span>
+      ${ready ? `<span class="pill">${ready} ready</span>` : ''}${icon('chev', 2.4)}
     </a>`;
 }
 
-// Home: one card answers "what am I doing today", the other day waits
-// below as a single row, Progresso follows, and this week's strip sits at
-// the foot. Sized to fit one standard iPhone screen.
+// Home: the greeting, one decisive Up next card with the sprig standing
+// on its floor, this week as seven dots, then the other days and Progresso
+// as plain rows in one list. Fits one iPhone screen.
 function viewHome() {
   const next = suggestedDay();
-  if (!next) return `${topbar()}${greetingHTML()}${progressoRowHTML()}`;
-  if (!next) return `${topbar()}${greetingHTML()}${progressoRowHTML()}`;
-  const live = !!(state.active && state.active.dayId === next.id);
-  const mins = typicalMinutes(next.id);
-  const last = lastRealSessionFor(next.id);
-  const meta = [`${next.slots.length} exercises`];
-  if (mins) meta.push(`about ${mins} min`);
-  if (!live && last) meta.push(`last ${relPhrase(last.endedAt)}`);
-  const others = state.program.days.filter((d) => d.id !== next.id).map((d) => `
-    <a class="dayrow" href="#/day/${d.id}">
-      <span class="daymark">${dayGlyphHTML(d.id)}</span>
-      <span class="dr-body"><span class="dr-name">${esc(d.name)}</span><span class="dr-sub">${esc(d.subtitle)}</span></span>
-      <span class="dr-when">${dayStatusHTML(d)}</span>${icon('chev', 2.2)}
-    </a>`).join('');
   const st = rhythmStats();
+  const rows = (days) => `<div class="group homerows">${days.map((d) => `
+    <a class="dayrow" href="#/day/${d.id}">
+      <span class="dr-glyph">${dayGlyphHTML(d.id)}</span>
+      <span class="dr-name">${esc(d.name)}</span>
+      <span class="dr-when">${dayStatusHTML(d)}</span>${icon('chev', 2.4)}
+    </a>`).join('')}${progressoRowHTML()}</div>`;
+  if (!next) return `${topbar()}${greetingHTML()}${weekStripHTML(st)}${rows([])}`;
+  const live = !!(state.active && state.active.dayId === next.id);
+  const when = whenLabel(next);
+  const others = state.program.days.filter((d) => d.id !== next.id);
   return `
     ${topbar()}
     ${greetingHTML()}
     <a class="upnext" href="#/day/${next.id}">
-      <span class="upnext-top"><span class="daymark lg">${dayGlyphHTML(next.id)}</span>
-        <span class="upnext-k ${live ? 'live' : ''}">${live ? 'In progress' : 'Up next'}</span></span>
+      <span class="upnext-k ${live ? 'live' : ''}">${live ? '' : `<span class="upnext-glyph">${dayGlyphHTML(next.id)}</span>`}${live ? 'In progress' : `Up next${when ? ' · ' + esc(when) : ''}`}</span>
       <span class="upnext-name">${esc(next.name)}</span>
       <span class="upnext-sub">${esc(next.subtitle)}</span>
-      <span class="upnext-meta">${esc(meta.join(' · '))}</span>
-      <span class="upnext-go">${live ? 'Pick up where you left off' : `Start ${esc(next.name)}`}${icon('chev', 2.4)}</span>
+      <span class="upnext-foot">
+        <span class="upnext-go">${live ? 'Resume' : 'Start'}${icon('chev', 2.6)}</span>
+        ${sprigHTML('upnext-sprig')}
+      </span>
     </a>
-    ${others ? `<div class="group dayrows">${others}</div>` : ''}
-    ${progressoRowHTML()}
     ${weekStripHTML(st)}
-    <div class="fieldmark">${sprigHTML()}</div>`;
+    ${rows(others)}`;
 }
 
-// This week as seven days, each trained day marked with that day's glyph.
+// This week as seven dots, Monday first: filled where she trained, a rose
+// ring on a scheduled day still ahead, today's letter set in a capsule.
 function weekStripHTML(st) {
-  const days = weekDays().map((d) => {
-    const mark = d.days.length
-      ? `<span class="wk-mark">${dayGlyphHTML(d.days[d.days.length - 1])}</span>`
-      : '<span class="wk-mark empty"></span>';
-    return `<div class="wk-day ${d.today ? 'today' : ''} ${d.future ? 'future' : ''}">
-      <span class="wk-l">${esc(d.letter)}</span><span class="wk-n">${d.num}</span>${mark}</div>`;
+  const dows = new Set(state.program.days.filter((d) => Number.isInteger(d.dow)).map((d) => d.dow));
+  const n = weeklyTarget();
+  const count = st ? st.thisWeek : 0;
+  const days = weekDays().map((d, i) => {
+    const dow = (i + 1) % 7;
+    const kind = d.days.length ? 'done' : (dows.has(dow) && (d.future || d.today)) ? 'plan' : '';
+    const names = d.days.map((id) => { const x = findDay(id); return x ? x.name : id; });
+    const label = d.days.length ? `trained ${names.join(', ')}` : kind === 'plan' ? 'planned' : 'rest';
+    return `<div class="wk-day ${d.today ? 'today' : ''}" aria-label="${esc(d.letter)}${d.today ? ', today' : ''}, ${esc(label)}">
+      <span class="wk-l">${esc(d.letter)}</span><span class="wk-dot ${kind}"></span></div>`;
   }).join('');
   return `
-    <div class="card weekcard">
+    <div class="week">
+      <div class="week-head"><span class="week-k">This week</span><span class="week-n">${Math.min(count, 99)} of ${n}</span></div>
       <div class="wk-row">${days}</div>
-      <div class="wk-line">${esc(weekLine(st))}</div>
     </div>`;
 }
 
@@ -956,8 +968,7 @@ function showSplash() {
   if (!target) return;
   const old = $('.splash');
   if (old) old.remove();
-  const now = new Date();
-  const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
+  const date = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   const el = document.createElement('div');
   el.className = 'splash';
   el.setAttribute('aria-hidden', 'true');
@@ -965,7 +976,7 @@ function showSplash() {
     <div class="splash-inner">
       ${sprigHTML().replace(/<path /g, '<path pathLength="1" ')}
       <div class="splash-ola">${esc(saudacao())}, Carolina</div>
-      <div class="splash-date">${esc(weekday)} · ${esc(fmtDate(now.getTime()))}</div>
+      <div class="splash-date">${esc(date)}</div>
     </div>`;
   document.body.appendChild(el);
   document.body.classList.add('splashing');
@@ -984,10 +995,12 @@ function showSplash() {
     setTimeout(() => {
       el.remove();
       document.body.classList.remove('settle-in');
-    }, 760);
+    }, 640);
   };
   el.addEventListener('click', settle);
-  splashTimer = setTimeout(settle, 1900);
+  // Leaving home mid-splash (a resume link could) settles too.
+  window.addEventListener('hashchange', settle, { once: true });
+  splashTimer = setTimeout(settle, 1250);
 }
 
 /* ---- workout ---- */
@@ -1027,24 +1040,27 @@ function restLabelFor(n, total) {
 const RING_CIRC = 2 * Math.PI * 12;
 
 // The ring: 28px visual, an invisible inset takes the hit area to ~50pt.
-function ringHTML(slot, e) {
+// One ring for every kind of slot: a counting ring draws an arc per set;
+// done is the same mark everywhere — a soft rose fill with a rose check.
+// `fresh` plays the completion phrase: the fill blooms out of the closed
+// ring, then the check writes itself.
+function ringHTML(slot, e, fresh) {
   const done = !!(e && e.done);
   const total = setTarget(slot);
-  if (!total) {
-    return `<button class="ring ${done ? 'on' : ''}" data-action="done" data-slot="${slot.id}"
-      aria-label="Mark done" aria-pressed="${done}"></button>`;
-  }
-  const n = done ? total : Math.min((e && e.sets) || 0, total - 1);
-  const off = RING_CIRC * (1 - n / total);
+  const n = total ? (done ? total : Math.min((e && e.sets) || 0, total - 1)) : 0;
+  const off = RING_CIRC * (1 - (total ? n / total : 0));
+  const label = total ? (done ? 'Reset sets' : `Count one set (${n} of ${total})`) : 'Mark done';
   return `
-    <button class="ring counting ${done ? 'on' : ''}" data-action="done" data-slot="${slot.id}"
-      aria-label="${done ? 'Reset sets' : `Count one set (${n} of ${total})`}" aria-pressed="${done}">
+    <button class="ring ${total ? 'counting' : ''} ${done ? 'on' : ''} ${fresh ? 'fresh' : ''}" data-action="done" data-slot="${slot.id}"
+      aria-label="${label}" aria-pressed="${done}">
       <svg viewBox="0 0 28 28" aria-hidden="true">
         <circle class="ring-track" cx="14" cy="14" r="12"></circle>
-        <circle class="ring-arc" cx="14" cy="14" r="12"
-          style="stroke-dasharray:${RING_CIRC.toFixed(2)};stroke-dashoffset:${off.toFixed(2)}"></circle>
+        ${total ? `<circle class="ring-arc" cx="14" cy="14" r="12"
+          style="stroke-dasharray:${RING_CIRC.toFixed(2)};stroke-dashoffset:${off.toFixed(2)}"></circle>` : ''}
+        <circle class="ring-fill" cx="14" cy="14" r="12"></circle>
+        <path class="ring-check" pathLength="1" d="M8.8 14.4l3.4 3.4 7-7.6"></path>
       </svg>
-      <span class="ring-count">${done ? icon('check', 3.2) : (n || '')}</span>
+      ${total && !done && n ? `<span class="ring-count">${n}</span>` : ''}
     </button>`;
 }
 
@@ -1140,7 +1156,7 @@ function slotCardHTML(day, slot, onMat) {
   const val = slot.track || slot.reps
     ? `<button class="val" data-action="expand" data-slot="${slot.id}" aria-label="Adjust">${valHTML(day.id, slot)}</button>` : '';
   return `
-    <div class="slot ${done ? 'done' : ''} ${note.trim() ? 'has-note' : ''}" data-slotcard="${slot.id}">
+    <div class="slot ${done ? 'done' : ''} ${a && a.sets && !done ? 'live' : ''} ${note.trim() ? 'has-note' : ''}" data-slotcard="${slot.id}">
       <div class="slot-row">
         ${ringHTML(slot, a)}
         <button class="slot-main" data-action="expand" data-slot="${slot.id}" aria-expanded="false">
@@ -1226,7 +1242,7 @@ function restDockHTML(dayId) {
   const heavy = !!(cur && cur.rest === 'heavy');
   const nSec = pairRestSec(findDay(dayId), cur);
   const btn = (tier, sec, on) =>
-    `<button class="restbtn ${on ? '' : 'quiet'}" data-action="rest" data-tier="${tier}"><span class="restbtn-k">Rest</span><span class="restbtn-t">${fmtMMSS(sec)}</span></button>`;
+    `<button class="restbtn ${on ? '' : 'quiet'}" data-action="rest" data-tier="${tier}" aria-label="Rest ${fmtMMSS(sec)}">${icon('clock', 2.2)}<span class="restbtn-t">${fmtMMSS(sec)}</span></button>`;
   return `<div class="rest-idle">${btn('normal', nSec, !heavy)}${btn('heavy', state.settings.restHeavy, heavy)}</div>`;
 }
 
@@ -1307,7 +1323,7 @@ function viewDay(dayId) {
   const a = state.active && state.active.dayId === dayId ? state.active : null;
   const allDone = !!a && requiredSlots(day).every((s) => isDone(a, s));
   return `
-    ${topbar('#/')}
+    ${topbar('#/', true)}
     <div class="dayhead">
       <div class="dayhead-text">
         <div class="dayhead-name">${esc(day.name)}</div>
@@ -1324,18 +1340,16 @@ function viewDay(dayId) {
     <button class="discardbtn ${a ? '' : 'off'}" data-action="discard" data-day="${day.id}">Discard session</button>`;
 }
 
-// Five petals fly off a ring the moment its exercise is done.
-function petalBurst(ringEl) {
-  if (!ringEl || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const row = ringEl.closest('.slot-row');
-  if (!row) return;
-  const b = document.createElement('span');
-  b.className = 'burst';
-  b.style.left = (ringEl.offsetLeft + ringEl.offsetWidth / 2) + 'px';
-  b.style.top = (ringEl.offsetTop + ringEl.offsetHeight / 2) + 'px';
-  b.innerHTML = [0, 1, 2, 3, 4].map((i) => `<i style="--a:${i * 72 + 18}deg;--d:${i * 22}ms"></i>`).join('');
-  row.appendChild(b);
-  setTimeout(() => b.remove(), 1000);
+// As an exercise finishes, one rose petal lifts off its ring, turns once
+// and fades upward — after the check has written itself.
+function petalLift(ringEl) {
+  if (!ringEl || reducedMotion()) return;
+  const p = document.createElement('span');
+  p.className = 'petal-lift';
+  p.setAttribute('aria-hidden', 'true');
+  p.innerHTML = '<svg viewBox="0 0 12 16"><path d="M6 15.2C2.4 12.6 1.2 7.4 6 .8c4.8 6.6 3.6 11.8 0 14.4z"/></svg>';
+  ringEl.appendChild(p);
+  setTimeout(() => p.remove(), 1800);
 }
 
 function viewFinish(dayId) {
@@ -1950,9 +1964,49 @@ function viewSlotEdit(dayId, slotId) {
 
 /* ============================== router ============================== */
 
+// A session is a sheet over home: it rises from the bottom on the way in
+// and drops away on the way out, home easing back up underneath. Every
+// other page is a push: deeper pages slide in from the right over a dimmed
+// parallax of the page before; Back slides them away again. A still copy
+// of the outgoing page (the ghost) carries the motion so the real page
+// can render at once.
+let lastView = null;
+let lastDepth = 0;
+const DEPTH = { home: 0, day: 1, settings: 1, progresso: 1, finish: 2, program: 2, import: 2, slot: 3 };
+function navMotion(from, to, fromDepth, toDepth) {
+  if (!from || reducedMotion()) return null;
+  if (to === 'day' && from !== 'finish' && from !== 'day') return 'in';
+  if (from === 'day' && to === 'home') return 'out';
+  if (from === to && fromDepth === toDepth) return null;
+  if (toDepth > fromDepth) return 'push';
+  if (toDepth < fromDepth) return 'pop';
+  return null;
+}
+function makeGhost(app, cls) {
+  const g = document.createElement('div');
+  g.className = 'ghost ' + cls;
+  g.setAttribute('aria-hidden', 'true');
+  g.innerHTML = `<div class="ghost-page" data-view="${app.getAttribute('data-view') || ''}" style="transform:translateY(${-window.scrollY}px)">${app.innerHTML}</div>`;
+  g.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+  // A still copy: no completion phrase, petal or splash replaying inside it.
+  g.querySelectorAll('.fresh, .pop, .just').forEach((n) => n.classList.remove('fresh', 'pop', 'just'));
+  g.querySelectorAll('.petal-lift, .splash').forEach((n) => n.remove());
+  document.body.appendChild(g);
+  setTimeout(() => g.remove(), 700);
+  return g;
+}
+
 function render() {
   const hash = location.hash || '#/';
   const parts = hash.replace(/^#\//, '').split('/');
+  const view = parts[0] || 'home';
+  const depth = view === 'program' && parts[2] ? DEPTH.slot : (DEPTH[view] != null ? DEPTH[view] : 1);
+  const motion = navMotion(lastView, view, lastDepth, depth);
+  lastView = view;
+  lastDepth = depth;
+  const appEl = $('#app');
+  const GHOST = { in: 'recede', out: 'drop', push: 'behind', pop: 'away' };
+  if (motion && appEl.innerHTML) makeGhost(appEl, GHOST[motion]);
   if ((parts[0] === 'day' || parts[0] === 'finish') && parts[1]) resumeDraft(parts[1]);
   let html = '';
   if (parts[0] === 'day' && parts[1]) html = viewDay(parts[1]);
@@ -1963,11 +2017,33 @@ function render() {
   else if (parts[0] === 'program' && parts[1] && parts[2]) html = viewSlotEdit(parts[1], parts[2]);
   else if (parts[0] === 'program') html = viewProgram();
   else html = viewHome();
-  $('#app').innerHTML = html;
+  const app = $('#app');
+  app.setAttribute('data-view', view);
+  document.documentElement.setAttribute('data-view', view);
+  app.innerHTML = html;
   window.scrollTo(0, 0);
+  const ENTER = { in: 'sheet-in', out: 'emerge', push: 'push-in', pop: 'pop-in' };
+  app.classList.remove('sheet-in', 'emerge', 'push-in', 'pop-in');
+  updateDock();
+  if (motion) {
+    app.getBoundingClientRect();
+    app.classList.add(ENTER[motion]);
+    setTimeout(() => app.classList.remove(ENTER[motion]), 700);
+  }
 }
 
 window.addEventListener('hashchange', render);
+
+// The dock's edge fade shows only while it's pinned under the top.
+let dockRaf = 0;
+function updateDock() {
+  dockRaf = 0;
+  const d = $('.dock');
+  if (!d) return;
+  const pin = parseFloat(getComputedStyle(d).top) || 0;
+  d.classList.toggle('stuck', window.scrollY > 0 && d.getBoundingClientRect().top <= pin + 0.5);
+}
+window.addEventListener('scroll', () => { if (!dockRaf) dockRaf = requestAnimationFrame(updateDock); }, { passive: true });
 
 /* ============================== actions ============================== */
 
@@ -2017,6 +2093,10 @@ document.addEventListener('click', (ev) => {
     const day = findDay(dayId);
     const slot = findSlot(day, slotId);
     if (!slot) return;
+    // Logging a set means the adjusting is over: fold the editor away and
+    // drop the keyboard. A typed value is committed first (change fires on blur).
+    if (document.activeElement && document.activeElement.matches('input, textarea')) document.activeElement.blur();
+    closeDrawers();
     const e = activeEntry(dayId, slotId);
     const total = setTarget(slot);
     if (total) {
@@ -2052,7 +2132,7 @@ document.addEventListener('click', (ev) => {
     const card = $(`[data-slotcard="${slotId}"]`);
     if (card) {
       card.classList.toggle('done', !!e.done);
-      if (e.done) closeDrawers();
+      card.classList.toggle('live', !!e.sets && !e.done);
     }
     // A pair or trio whose last member just finished says so, with a bloom.
     const group = card && card.closest('.slotgroup.pair');
@@ -2061,11 +2141,23 @@ document.addEventListener('click', (ev) => {
       if (all && !group.classList.contains('done')) group.classList.add('just');
       group.classList.toggle('done', all);
     }
-    t.outerHTML = ringHTML(slot, e);
+    // The arc grows from where it was rather than snapping to the new set.
+    const oldArc = t.querySelector('.ring-arc');
+    const oldOff = oldArc ? oldArc.style.strokeDashoffset : null;
+    t.outerHTML = ringHTML(slot, e, !!e.done);
     const ringNow = card && card.querySelector('.ring');
     if (ringNow) {
+      const arc = ringNow.querySelector('.ring-arc');
+      if (arc && oldOff != null && (e.done || e.sets) && !reducedMotion()) {
+        const to = arc.style.strokeDashoffset;
+        arc.style.transition = 'none';
+        arc.style.strokeDashoffset = oldOff;
+        arc.getBoundingClientRect();
+        arc.style.transition = '';
+        arc.style.strokeDashoffset = to;
+      }
       ringNow.classList.add('pop');
-      if (e.done) petalBurst(ringNow);
+      if (e.done) petalLift(ringNow);
     }
     refreshRow(dayId, slot);
     const rin = $(`[data-edit="${slotId}"] input[data-action="reps"]`);
